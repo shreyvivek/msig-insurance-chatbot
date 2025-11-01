@@ -1,9 +1,9 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react'
-import { Send, Mic, Volume2, Sparkles, Plane, Upload, X, History, ChevronLeft, ExternalLink, ShoppingCart, User, CreditCard, Mail, Phone, Calendar, Globe, MessageSquarePlus, Instagram } from 'lucide-react'
+import { Send, Mic, Volume2, Sparkles, Plane, Upload, X, History, ChevronLeft, ExternalLink, ShoppingCart, User, CreditCard, Mail, Phone, Calendar, Globe, MessageSquarePlus } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
-import ProfileConnect from '../components/ProfileConnect'
+import UserOnboarding from '../components/UserOnboarding'
 
 // Function to clean policy names for display
 function cleanPolicyName(name: string): string {
@@ -480,7 +480,7 @@ function PurchaseForm({ quote, quoteId, tripDetails, isOpen, onClose, onComplete
 
 // Quote Card with Purchase Button
 function QuoteCard({ quote, quoteId, tripDetails, onPurchase }: { 
-  quote: { plan_name: string; price: number; currency: string; recommended_for: string; offer_id?: string; product_code?: string; source?: string }
+  quote: { plan_name: string; price: number; currency: string; recommended_for: string; offer_id?: string; product_code?: string; source?: string; score?: number; benefits?: string[]; reasons?: string[]; cost_source?: string }
   quoteId?: string
   tripDetails?: any
   onPurchase: (quote: any, insureds: any[], paymentInfo: any) => void 
@@ -515,10 +515,36 @@ function QuoteCard({ quote, quoteId, tripDetails, onPurchase }: {
           </div>
         </div>
         <p className="text-gray-400 text-sm mb-4">{quote.recommended_for}</p>
+        {quote.score !== undefined && (
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-gray-400">Match Score</span>
+              <span className="text-sm font-semibold text-blue-400">{quote.score}/100</span>
+            </div>
+            <div className="w-full bg-gray-700 rounded-full h-2">
+              <div 
+                className="bg-gradient-to-r from-blue-600 to-indigo-600 h-2 rounded-full transition-all"
+                style={{ width: `${quote.score}%` }}
+              />
+            </div>
+          </div>
+        )}
+        {quote.benefits && quote.benefits.length > 0 && (
+          <div className="mb-4">
+            <p className="text-xs text-gray-400 mb-1">Key Benefits:</p>
+            <ul className="text-xs text-gray-300 space-y-1">
+              {quote.benefits.slice(0, 3).map((benefit: string, idx: number) => (
+                <li key={idx} className="flex items-start gap-1">
+                  <span className="text-blue-400 mt-0.5">•</span>
+                  <span>{benefit}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <button
           onClick={() => setShowPurchaseForm(true)}
-          disabled={!quote.offer_id && quote.source !== 'ancileo'}
-          className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition-all flex items-center justify-center gap-2"
+          className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-3 px-4 rounded-lg transition-all flex items-center justify-center gap-2"
         >
           <ShoppingCart className="w-4 h-4" />
           Buy Now
@@ -822,7 +848,7 @@ interface Message {
   content: string
   timestamp: Date
   booking_links?: Array<{ type: string; platform: string; url: string; text: string }>
-  quotes?: Array<{ plan_name: string; price: number; currency: string; recommended_for: string; source?: string; offer_id?: string; product_code?: string }>
+  quotes?: Array<{ plan_name: string; price: number; currency: string; recommended_for: string; source?: string; offer_id?: string; product_code?: string; score?: number; benefits?: string[]; reasons?: string[]; cost_source?: string }>
   quote_id?: string
   trip_details?: any
 }
@@ -850,10 +876,7 @@ export default function Home() {
   const [currentThreadId, setCurrentThreadId] = useState<string>('default')
   const [showLanguageMenu, setShowLanguageMenu] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
-  const [userEmail, setUserEmail] = useState('')
-  const [instagramUsername, setInstagramUsername] = useState('')
-  const [userProfile, setUserProfile] = useState<any>(null)
-  const [policyTier, setPolicyTier] = useState<'free' | 'medium' | 'premium'>('free')
+  const [userData, setUserData] = useState<any>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const recognitionRef = useRef<any>(null)
@@ -922,13 +945,15 @@ export default function Home() {
   // Check if onboarding is needed (first visit)
   useEffect(() => {
     const hasOnboarded = localStorage.getItem('wandersure_onboarded')
-    const savedEmail = localStorage.getItem('wandersure_email')
-    const savedInstagram = localStorage.getItem('wandersure_instagram')
+    const savedUserData = localStorage.getItem('wandersure_user_data')
     
-    if (hasOnboarded && savedEmail) {
-      setUserEmail(savedEmail)
-      if (savedInstagram) setInstagramUsername(savedInstagram)
-      setShowOnboarding(false)
+    if (hasOnboarded && savedUserData) {
+      try {
+        setUserData(JSON.parse(savedUserData))
+        setShowOnboarding(false)
+      } catch (e) {
+        setShowOnboarding(true)
+      }
     } else if (!hasOnboarded) {
       setShowOnboarding(true)
     }
@@ -938,27 +963,14 @@ export default function Home() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
   
-  // Handle profile connection from ProfileConnect component
-  const handleProfileConnected = (profileData: any) => {
-    const profile = profileData.profile_data || profileData
-    setUserProfile(profile)
-    setPolicyTier(profile.policy_tier || 'free')
-    setUserEmail(profile.email || '')
-    setInstagramUsername(profile.instagram_username || '')
+  // Handle user onboarding completion
+  const handleOnboardingComplete = (userData: any) => {
+    setUserData(userData)
     setShowOnboarding(false)
-    
-    localStorage.setItem('wandersure_onboarded', 'true')
-    if (profile.email) localStorage.setItem('wandersure_email', profile.email)
-    if (profile.instagram_username) localStorage.setItem('wandersure_instagram', profile.instagram_username)
-    
-    // Show welcome message with tier
-    const name = profile.name || profile.instagram_username || 'Traveler'
-    const activities = profile.likely_activities || []
-    const adventurousScore = profile.adventurous_score || 0
     
     const welcomeMsg: Message = {
       role: 'assistant',
-      content: `🎉 **Welcome, ${name}!**\n\n✅ Your profile has been analyzed\n📊 Policy tier: **${(profile.policy_tier || 'free').toUpperCase()}**\n${adventurousScore > 0 ? `\n🏔️ Adventure score: ${(adventurousScore * 100).toFixed(0)}%\n${activities.length > 0 ? `🎯 Detected interests: ${activities.slice(0, 5).join(', ')}` : ''}` : ''}\n\nReady to find the perfect travel insurance? Upload your itinerary or tell me about your trip!`,
+      content: `🎉 **Welcome!**\n\n✅ Your profile has been saved\n${userData.interests?.length > 0 ? `🎯 Interests: ${userData.interests.slice(0, 5).join(', ')}` : ''}\n\nReady to find the perfect travel insurance? Upload your travel itinerary to get started!`,
       timestamp: new Date()
     }
     setMessages([welcomeMsg])
@@ -970,7 +982,7 @@ export default function Home() {
     
     const welcomeMsg: Message = {
       role: 'assistant',
-      content: `🎉 **Welcome to WanderSure!**\n\nI'm here to help you find the perfect travel insurance. Upload your itinerary or tell me about your trip!`,
+      content: `🎉 **Welcome to WanderSure!**\n\nI'm here to help you find the perfect travel insurance. Upload your travel itinerary to get started!`,
       timestamp: new Date()
     }
     setMessages([welcomeMsg])
@@ -1102,13 +1114,11 @@ export default function Home() {
         body: JSON.stringify({
           question: currentInput,
           language: language,
-          user_id: userProfile?.email || 'default_user',
-          email: userProfile?.email || userEmail || undefined,
+          user_id: userData?.user_id || 'default_user',
           is_voice: false,
           context_data: {
             ...contextData,
-            user_profile: userProfile,  // Pass user profile for personalized responses
-            policy_tier: policyTier
+            user_data: userData  // Pass user data (age, interests, medical conditions)
           }
         })
       })
@@ -1194,16 +1204,25 @@ export default function Home() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               destination: tripInfo.destination || 'Unknown',
+              source: tripInfo.source,
               start_date: tripInfo.departure_date || tripInfo.start_date,
               end_date: tripInfo.return_date || tripInfo.end_date,
-              travelers: tripInfo.travelers?.length || 1,
+              travelers: tripInfo.pax || tripInfo.travelers?.length || 1,
               ages: tripInfo.travelers?.map((t: any) => t.age).filter(Boolean) || [],
               activities: tripInfo.activities || [],
-              trip_cost: tripInfo.trip_cost
+              trip_cost: tripInfo.trip_cost,
+              ticket_policies: tripInfo.ticket_policies || [],
+              extracted_data: tripInfo,
+              // User data from onboarding
+              user_age: userData?.age,
+              interests: userData?.interests || [],
+              medical_conditions: userData?.medical_conditions || []
             })
           })
           
           const quoteData = await quoteResponse.json()
+          console.log('📊 Quote Response:', quoteData)
+          console.log('📋 Quotes received:', quoteData.quotes?.map((q: any) => q.plan_name))
           
           // Build claims insights message
           let claimsSection = ''
@@ -1226,11 +1245,23 @@ export default function Home() {
             }
           }
           
+          // Verify we have the right quotes from Policy_Wordings
+          const quotes = quoteData.quotes || []
+          const hasGenericNames = quotes.some((q: any) => 
+            ['Basic', 'Standard', 'Premium'].includes(q.plan_name)
+          )
+          
+          if (hasGenericNames) {
+            console.error('❌ ERROR: Received generic policy names from API!', quotes.map((q: any) => q.plan_name))
+          } else {
+            console.log('✅ Received Policy_Wordings policies:', quotes.map((q: any) => q.plan_name))
+          }
+          
           const successMsg: Message = {
             role: 'assistant',
-            content: `✅ **Document Processed Successfully!**\n\n### 📄 Trip Details Extracted\n\n${tripInfo.destination ? `• Destination: ${tripInfo.destination}` : ''}${tripInfo.departure_date ? `\n• Departure: ${tripInfo.departure_date}` : ''}${tripInfo.return_date ? `\n• Return: ${tripInfo.return_date}` : ''}${tripInfo.travelers?.length ? `\n• Travelers: ${tripInfo.travelers.length}` : ''}${claimsSection}\n\n### 💡 Insurance Recommendations\n\n${quoteData.quotes?.map((q: any, i: number) => `• **${q.plan_name}**: $${q.price.toFixed(2)} ${q.currency || 'SGD'} - ${q.recommended_for}`).join('\n')}\n\nWhich plan would you like to learn more about?`,
+            content: `✅ **Document Processed Successfully!**\n\n### 📄 Trip Details Extracted\n\n${tripInfo.destination ? `• Destination: ${tripInfo.destination}` : ''}${tripInfo.departure_date ? `\n• Departure: ${tripInfo.departure_date}` : ''}${tripInfo.return_date ? `\n• Return: ${tripInfo.return_date}` : ''}${tripInfo.pax ? `\n• Travelers: ${tripInfo.pax}` : tripInfo.travelers?.length ? `\n• Travelers: ${tripInfo.travelers.length}` : ''}${claimsSection}\n\n### 💡 Insurance Recommendations\n\n${quotes.length > 0 ? quotes.map((q: any, i: number) => `• **${q.plan_name}**: $${q.price.toFixed(2)} ${q.currency || 'SGD'} ${q.score ? `(Score: ${q.score}/100)` : ''} - ${q.recommended_for}`).join('\n') : 'No quotes available'}\n\nWhich plan would you like to learn more about?`,
             timestamp: new Date(),
-            quotes: quoteData.quotes || [],
+            quotes: quotes,
             quote_id: quoteData.quote_id || null,
             trip_details: quoteData.trip_details || tripInfo
           }
@@ -1678,10 +1709,10 @@ export default function Home() {
             </div>
           </header>
           
-          {/* Onboarding Modal - Now using ProfileConnect component */}
+          {/* Onboarding Modal - User data collection */}
           {showOnboarding && (
-            <ProfileConnect
-              onConnected={handleProfileConnected}
+            <UserOnboarding
+              onComplete={handleOnboardingComplete}
               onSkip={handleSkipOnboarding}
             />
           )}
@@ -1718,107 +1749,136 @@ export default function Home() {
                         />
                         </div>
                       
-                        {/* Insurance Quotes with Purchase Option - ONLY Ancileo */}
+                        {/* Insurance Quotes with Purchase Option */}
                         {message.quotes && message.quotes.length > 0 && (
                           <div className="mt-6 pt-6">
                             <div className="mb-4 flex items-center justify-between">
                               <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                                <Sparkles className="w-5 h-5 text-purple-400" />
+                                <Sparkles className="w-5 h-5 text-blue-400" />
                                 Available Insurance Plans
-                                <span className="ml-2 px-2 py-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-semibold rounded-full">
-                                  Ancileo Only
-                                </span>
+                                {message.quotes.some((q: any) => q.source === 'taxonomy_match') && (
+                                  <span className="ml-2 px-2 py-1 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-semibold rounded-full">
+                                    Matched via Taxonomy
+                                  </span>
+                                )}
+                                {message.quotes.some((q: any) => q.cost_source === 'ancileo') && (
+                                  <span className="ml-2 px-2 py-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-semibold rounded-full">
+                                    Prices from Ancileo
+                                  </span>
+                                )}
                               </h3>
-                              <div className="flex items-center gap-3 text-xs">
-                                <span className="flex items-center gap-1 text-gray-400">
-                                  <span className="w-3 h-3 rounded-full bg-gradient-to-r from-purple-600 to-pink-600"></span>
-                                  Ancileo API
-                                </span>
-                              </div>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {/* Filter to only show Ancileo policies */}
-                              {message.quotes
-                                .filter((q: any) => q.source === 'ancileo' || q.offer_id)
-                                .map((quote: any, idx: number) => (
+                              {/* Show all matched policies */}
+                              {message.quotes.map((quote: any, idx: number) => (
                                 <QuoteCard
                                   key={idx}
                                   quote={quote}
                                   quoteId={message.quote_id}
                                   tripDetails={message.trip_details}
                                   onPurchase={async (selectedQuote, insureds, paymentInfo) => {
-                                    // Handle purchase through Ancileo
+                                    // Handle purchase - support both Ancileo and local policies
                                     try {
-                                      // Build insureds array according to Ancileo API format
-                                      const ancileoInsureds = (insureds || message.trip_details?.travelers || []).map((t: any, idx: number) => ({
-                                        id: t.id || `insured_${idx}`,
-                                        title: t.title || (t.gender === 'F' ? 'Ms' : 'Mr'),
-                                        firstName: t.firstName || t.first_name || (t.name ? t.name.split(' ')[0] : ''),
-                                        lastName: t.lastName || t.last_name || (t.name ? t.name.split(' ').slice(1).join(' ') : ''),
-                                        nationality: t.nationality || 'SG',
-                                        dateOfBirth: t.dateOfBirth || t.date_of_birth || new Date(new Date().setFullYear(new Date().getFullYear() - (t.age || 30))).toISOString().split('T')[0],
-                                        passport: t.passport || '',
-                                        cardId: t.cardId || t.card_id || ''
-                                      }))
-                                      
-                                      // Build main contact from first insured or payment info
-                                      const firstInsured = ancileoInsureds[0] || {}
-                                      // Get email and phone from original insured data
-                                      const originalFirstInsured = (insureds || message.trip_details?.travelers || [])[0] || {}
-                                      const mainContact = {
-                                        insuredId: firstInsured.id,
-                                        title: firstInsured.title || 'Mr',
-                                        firstName: firstInsured.firstName || '',
-                                        lastName: firstInsured.lastName || '',
-                                        email: originalFirstInsured.email || paymentInfo?.email || '',
-                                        phoneNumber: originalFirstInsured.phone || originalFirstInsured.phoneNumber || paymentInfo?.phone || ''
-                                      }
-                                      
-                                      // Build payment structure if provided
-                                      const payment = paymentInfo?.cardNumber ? {
-                                        pgwPspId: 'stripe', // Default payment gateway
-                                        pgwMerchantId: 'wandersure',
-                                        pspIdentifier: 'stripe',
-                                        pspTransactionId: paymentInfo.transactionId || `txn_${Date.now()}`,
-                                        merchantReference: `ref_${Date.now()}`,
-                                        paymentMethod: 'credit-card',
-                                        amount: selectedQuote.price,
-                                        currency: selectedQuote.currency || 'SGD',
-                                        status: 'authorised',
-                                        transactionDate: new Date().toISOString(),
-                                        paymentName: paymentInfo.cardName || ''
-                                      } : undefined
-                                      
-                                      const purchaseResponse = await fetch(`${API_URL}/api/ancileo/purchase`, {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({
-                                          quote_id: message.quote_id,
-                                          offer_id: selectedQuote.offer_id,
-                                          product_code: selectedQuote.product_code,
-                                          product_type: 'travel-insurance',
-                                          unit_price: selectedQuote.price,
-                                          currency: selectedQuote.currency || 'SGD',
-                                          quantity: 1,
-                                          insureds: ancileoInsureds,
-                                          main_contact: mainContact,
-                                          payment: payment,
-                                          market: 'SG',
-                                          language_code: 'en'
-                                        })
-                                      })
-                                      
-                                      const purchaseData = await purchaseResponse.json()
-                                      if (purchaseData.success) {
-                                        const sourceLabel = selectedQuote.source === 'ancileo' || selectedQuote.offer_id ? 'Ancileo' : 'Local'
-                                        const purchaseMsg: Message = {
-                                          role: 'assistant',
-                                          content: `✅ **Purchase Successful!**\n\nYour insurance policy has been purchased:\n\n• Policy: ${cleanPolicyName(selectedQuote.plan_name)}\n• Source: ${sourceLabel}\n• Policy Number: ${purchaseData.policy_number || 'Processing...'}\n• Amount: ${selectedQuote.currency || 'SGD'} ${selectedQuote.price.toFixed(2)}\n\nConfirmation email will be sent shortly.`,
-                                          timestamp: new Date()
+                                      // If it's an Ancileo policy (has offer_id), use Ancileo purchase endpoint
+                                      if (selectedQuote.offer_id || selectedQuote.source === 'ancileo') {
+                                        // Build insureds array according to Ancileo API format
+                                        const ancileoInsureds = (insureds || message.trip_details?.travelers || []).map((t: any, idx: number) => ({
+                                          id: t.id || `insured_${idx}`,
+                                          title: t.title || (t.gender === 'F' ? 'Ms' : 'Mr'),
+                                          firstName: t.firstName || t.first_name || (t.name ? t.name.split(' ')[0] : ''),
+                                          lastName: t.lastName || t.last_name || (t.name ? t.name.split(' ').slice(1).join(' ') : ''),
+                                          nationality: t.nationality || 'SG',
+                                          dateOfBirth: t.dateOfBirth || t.date_of_birth || new Date(new Date().setFullYear(new Date().getFullYear() - (t.age || 30))).toISOString().split('T')[0],
+                                          passport: t.passport || '',
+                                          cardId: t.cardId || t.card_id || ''
+                                        }))
+                                        
+                                        // Build main contact from first insured or payment info
+                                        const firstInsured = ancileoInsureds[0] || {}
+                                        const originalFirstInsured = (insureds || message.trip_details?.travelers || [])[0] || {}
+                                        const mainContact = {
+                                          insuredId: firstInsured.id,
+                                          title: firstInsured.title || 'Mr',
+                                          firstName: firstInsured.firstName || '',
+                                          lastName: firstInsured.lastName || '',
+                                          email: originalFirstInsured.email || paymentInfo?.email || '',
+                                          phoneNumber: originalFirstInsured.phone || originalFirstInsured.phoneNumber || paymentInfo?.phone || ''
                                         }
-                                        setMessages((prev: Message[]) => [...prev, purchaseMsg])
+                                        
+                                        // Build payment structure if provided
+                                        const payment = paymentInfo?.cardNumber ? {
+                                          pgwPspId: 'stripe',
+                                          pgwMerchantId: 'wandersure',
+                                          pspIdentifier: 'stripe',
+                                          pspTransactionId: paymentInfo.transactionId || `txn_${Date.now()}`,
+                                          merchantReference: `ref_${Date.now()}`,
+                                          paymentMethod: 'credit-card',
+                                          amount: selectedQuote.price,
+                                          currency: selectedQuote.currency || 'SGD',
+                                          status: 'authorised',
+                                          transactionDate: new Date().toISOString(),
+                                          paymentName: paymentInfo.cardName || ''
+                                        } : undefined
+                                        
+                                        const purchaseResponse = await fetch(`${API_URL}/api/ancileo/purchase`, {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({
+                                            quote_id: message.quote_id,
+                                            offer_id: selectedQuote.offer_id,
+                                            product_code: selectedQuote.product_code,
+                                            product_type: 'travel-insurance',
+                                            unit_price: selectedQuote.price,
+                                            currency: selectedQuote.currency || 'SGD',
+                                            quantity: 1,
+                                            insureds: ancileoInsureds,
+                                            main_contact: mainContact,
+                                            payment: payment,
+                                            market: 'SG',
+                                            language_code: 'en'
+                                          })
+                                        })
+                                        
+                                        const purchaseData = await purchaseResponse.json()
+                                        if (purchaseData.success) {
+                                          const purchaseMsg: Message = {
+                                            role: 'assistant',
+                                            content: `✅ **Purchase Successful!**\n\nYour insurance policy has been purchased:\n\n• Policy: ${cleanPolicyName(selectedQuote.plan_name)}\n• Source: Ancileo\n• Policy Number: ${purchaseData.policy_number || 'Processing...'}\n• Amount: ${selectedQuote.currency || 'SGD'} ${selectedQuote.price.toFixed(2)}\n\nConfirmation email will be sent shortly.`,
+                                            timestamp: new Date()
+                                          }
+                                          setMessages((prev: Message[]) => [...prev, purchaseMsg])
+                                          return
+                                        } else {
+                                          throw new Error(purchaseData.error || 'Purchase failed')
+                                        }
                                       } else {
-                                        throw new Error(purchaseData.error || 'Purchase failed')
+                                        // Local/taxonomy-matched policy - use Stripe payment directly
+                                        const paymentResponse = await fetch(`${API_URL}/api/payment/create`, {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({
+                                            amount: selectedQuote.price,
+                                            currency: selectedQuote.currency || 'SGD',
+                                            policy_name: selectedQuote.plan_name,
+                                            product_code: selectedQuote.product_code,
+                                            trip_details: message.trip_details,
+                                            insureds: insureds,
+                                            payment_info: paymentInfo
+                                          })
+                                        })
+                                        
+                                        const paymentData = await paymentResponse.json()
+                                        if (paymentData.success) {
+                                          const purchaseMsg: Message = {
+                                            role: 'assistant',
+                                            content: `✅ **Purchase Successful!**\n\nYour insurance policy has been purchased:\n\n• Policy: ${cleanPolicyName(selectedQuote.plan_name)}\n• Source: ${selectedQuote.source === 'taxonomy_match' ? 'Taxonomy Matched' : 'Local'}\n• Policy Number: ${paymentData.policy_number || paymentData.payment_id || 'Processing...'}\n• Amount: ${selectedQuote.currency || 'SGD'} ${selectedQuote.price.toFixed(2)}\n\n${paymentData.payment_url ? `[Complete Payment](${paymentData.payment_url})` : 'Confirmation email will be sent shortly.'}`,
+                                            timestamp: new Date()
+                                          }
+                                          setMessages((prev: Message[]) => [...prev, purchaseMsg])
+                                          return
+                                        } else {
+                                          throw new Error(paymentData.error || 'Payment processing failed')
+                                        }
                                       }
                                     } catch (error: any) {
                                       const errorMsg: Message = {
@@ -1831,10 +1891,10 @@ export default function Home() {
                                   }}
                                 />
                               ))}
-                        </div>
-                            {message.quotes.filter((q: any) => q.source === 'ancileo' || q.offer_id).length === 0 && (
+                            </div>
+                            {message.quotes.length === 0 && (
                               <div className="text-center py-8 text-gray-400">
-                                <p>No Ancileo policies available. Trying to fetch from Ancileo API...</p>
+                                <p>No insurance plans available. Please upload your itinerary to get matched policies.</p>
                               </div>
                             )}
                           </div>

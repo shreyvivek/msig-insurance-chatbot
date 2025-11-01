@@ -96,23 +96,28 @@ Document Type: IMAGE (screenshot or photo of booking)
 Look carefully for:
 - Flight numbers, airline names
 - Departure and arrival airports/cities
+- Source/departure location
 - Travel dates (departure, return)
-- Passenger names and ages
+- Passenger names and ages (count total pax)
 - Booking reference numbers
+- Ticket policies or booking policies mentioned
 - Trip costs/prices
 - Destination cities or countries
 
 Extract all visible text and information. Return as JSON:
 {{
     "destination": "city, country",
+    "source": "city, country (departure location)",
     "departure_date": "YYYY-MM-DD",
     "return_date": "YYYY-MM-DD",
+    "pax": <number of travelers>,
     "travelers": [
         {{
             "name": "Full Name if visible",
             "age": 0
         }}
     ],
+    "ticket_policies": ["any policy mentioned in ticket"],
     "flight_details": {{
         "airline": "",
         "flight_number": "",
@@ -141,22 +146,27 @@ Document Content:
 
 IMPORTANT: Extract information needed for travel insurance quotes:
 - Trip destination (critical for risk assessment)
+- Source/departure location (city, country)
 - Travel dates (start and end dates)
-- Number of travelers and their ages (for pricing)
+- Number of travelers and their ages (for pricing - pax count)
+- Ticket policies/booking policies mentioned in document
 - Trip cost (for trip cancellation coverage)
 - Planned activities (for activity-based coverage needs)
 
 Return as JSON:
 {{
     "destination": "city, country (e.g., Tokyo, Japan)",
+    "source": "city, country (e.g., Singapore, Singapore)",
     "departure_date": "YYYY-MM-DD",
     "return_date": "YYYY-MM-DD",
+    "pax": <number of travelers>,
     "travelers": [
         {{
             "name": "Full Name if available",
             "age": 0
         }}
     ],
+    "ticket_policies": ["policy mentioned in ticket/booking", "another policy if mentioned"],
     "flight_details": {{
         "airline": "",
         "flight_number": "",

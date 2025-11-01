@@ -84,6 +84,7 @@ from claims_analyzer import ClaimsAnalyzer
 from mcp_integrations import MCPIntegrations
 from activity_policy_matcher import ActivityPolicyMatcher
 from policy_simplifier import PolicySimplifier
+from taxonomy_matcher import TaxonomyMatcher
 from routers.v1 import router as v1_router
 
 policy_intel = PolicyIntelligence()
@@ -100,6 +101,7 @@ claims_analyzer = ClaimsAnalyzer()
 mcp_integrations = MCPIntegrations()
 activity_matcher = ActivityPolicyMatcher()
 policy_simplifier = PolicySimplifier()
+taxonomy_matcher = TaxonomyMatcher()
 
 def inject_additional_products(ancileo_quotes: List[Dict], trip_details: Dict) -> List[Dict]:
     """
@@ -847,7 +849,12 @@ async def extract_trip(request: dict):
 
 @app.post("/api/quote")
 async def generate_quote(request: dict):
-    """Generate quote - ALWAYS uses Ancileo API if available, falls back to local"""
+    """
+    Generate quote - NEW FLOW:
+    1. Match policies using JSON taxonomies (NO ANCILEO)
+    2. Use Ancileo API ONLY for cost calculation
+    3. Combine results with scoring
+    """
     # Validate required fields first
     required_fields = ["destination", "start_date", "end_date"]
     missing_fields = [field for field in required_fields if not request.get(field)]
@@ -860,7 +867,64 @@ async def generate_quote(request: dict):
             "message": f"Please provide: {', '.join(missing_fields)}"
         }
     
-    # ALWAYS try Ancileo API first if configured
+    # STEP 1: Match policies using JSON taxonomies (NO ANCILEO)
+    user_data = {
+        "age": request.get("user_age") or request.get("age") or 30,
+        "interests": request.get("interests", []),
+        "medical_conditions": request.get("medical_conditions", [])
+    }
+    
+    trip_data = {
+        "destination": request.get("destination"),
+        "source": request.get("source"),
+        "departure_date": request.get("start_date") or request.get("departure_date"),
+        "return_date": request.get("end_date") or request.get("return_date"),
+        "pax": request.get("travelers", 1),
+        "ticket_policies": request.get("ticket_policies", [])
+    }
+    
+    extracted_data = request.get("extracted_data", {})
+    
+    # STEP 1: Match policies against taxonomy (NO TIERS, just return what matches)
+    matched_policies = []
+    try:
+        matched_policies = await taxonomy_matcher.match_policies(
+            user_data=user_data,
+            trip_data=trip_data,
+            extracted_data=extracted_data
+        )
+        logger.info(f"✅ Matched {len(matched_policies)} applicable policies from taxonomy")
+        if matched_policies:
+            logger.info(f"Policy names: {[p.get('policy_name') for p in matched_policies]}")
+        else:
+            logger.warning("⚠️ No policies matched from taxonomy for this trip/user profile")
+    except Exception as e:
+        logger.error(f"Taxonomy matching failed: {e}", exc_info=True)
+        matched_policies = []
+    
+    # NO FALLBACKS - just return what taxonomy matching found
+    if not matched_policies or len(matched_policies) == 0:
+        logger.warning("No applicable policies found from taxonomy matching")
+        # Return empty quotes - let user know no policies match
+        return {
+            "success": True,
+            "source": "taxonomy_match",
+            "quotes": [],
+            "trip_details": {
+                "destination": trip_data.get("destination"),
+                "source": trip_data.get("source"),
+                "departure_date": trip_data.get("departure_date"),
+                "return_date": trip_data.get("return_date"),
+                "travelers": trip_data.get("pax", 1)
+            },
+            "message": "No insurance policies found that match your trip details and profile. Please adjust your search criteria."
+        }
+    
+    # STEP 2: Get costs from Ancileo API ONLY (for cost calculation)
+    ancileo_quote_id = None
+    ancileo_prices = {}
+    ancileo_currencies = {}
+    
     try:
         from ancileo_api import AncileoAPI
         ancileo = AncileoAPI()
@@ -928,89 +992,101 @@ async def generate_quote(request: dict):
                 )
                 
                 if quote_result.get("success"):
-                    # Convert Ancileo response to our format
+                    ancileo_quote_id = quote_result.get("quote_id")
                     ancileo_policies = quote_result.get("policies", [])
-                    quotes = []
-                    for policy in ancileo_policies:
-                        quotes.append({
-                            "plan_name": policy.get("product_name", "Ancileo Policy"),
-                            "price": policy.get("price", 0),
-                            "currency": policy.get("currency", "SGD"),
-                            "recommended_for": policy.get("description", "Travel protection"),
-                            "source": "ancileo",  # Clearly marked as Ancileo
-                            "offer_id": policy.get("offer_id"),
-                            "product_code": policy.get("product_code"),
-                            "coverage": policy.get("coverage", {}),
-                            "features": policy.get("features", []),
-                            "raw_data": policy.get("raw_data", {})
-                        })
+                    # Store Ancileo prices for cost calculation
+                    ancileo_prices = {p.get("product_code"): p.get("price", 0) for p in ancileo_policies if p.get("product_code")}
+                    ancileo_currencies = {p.get("product_code"): p.get("currency", "SGD") for p in ancileo_policies if p.get("currency")}
                     
-                    # Inject additional mock products if Ancileo returns only 1 quote
-                    if len(quotes) <= 1:
-                        quotes = inject_additional_products(quotes, trip_details=request)
-                    
-                    # Get user profile for personalized recommendations
-                    user_profile = None
-                    email = request.get("email")
-                    if email:
-                        user_identity = user_profile_manager.identify_user(email=email)
-                        if user_identity.get("found"):
-                            user_profile = user_identity["user"]
-                    
-                    trip_details_obj = {
-                        "destination": arrival_country,
-                        "departure_date": departure_date,
-                        "return_date": return_date,
-                        "travelers": travelers,
-                        "adults": adults_count,
-                        "children": children_count,
-                        "ages": ages,
-                        "activities": request.get("activities", []),
-                        "trip_cost": request.get("trip_cost")
-                    }
-                    
-                    # Generate intelligent recommendations using Blocks 1, 2, and 5
-                    recommendations = None
-                    try:
-                        recommendations = await intelligent_recommender.recommend_policies(
-                            trip_details=trip_details_obj,
-                            user_profile=user_profile,
-                            available_quotes=quotes,
-                            policy_intel=policy_intel,
-                            predictive_intel=predictive_intel
-                        )
-                    except Exception as e:
-                        logger.error(f"Intelligent recommendation failed: {e}", exc_info=True)
-                    
-                    return {
-                        "success": True,
-                        "source": "ancileo",
-                        "quote_id": quote_result.get("quote_id"),
-                        "quotes": quotes,
-                        "recommendations": recommendations,  # Personalized recommendations
-                        "raw_data": quote_result.get("raw_response"),
-                        "trip_details": trip_details_obj,
-                        "user_profile_found": user_profile is not None
-                    }
+                    logger.info(f"Got {len(ancileo_policies)} Ancileo policies for pricing")
             except Exception as e:
-                logger.error(f"Ancileo API quote failed: {e}", exc_info=True)
-                # Fall through to local quote generation
+                logger.error(f"Ancileo API pricing failed: {e}", exc_info=True)
     except ImportError:
         logger.warning("Ancileo API not available")
     except Exception as e:
         logger.error(f"Ancileo API initialization failed: {e}")
     
-    # Use local quote generation as fallback or default
-    result = await doc_intel.generate_quote(
-        destination=request.get("destination"),
-        start_date=request.get("start_date"),
-        end_date=request.get("end_date"),
-        travelers=request.get("travelers", 1),
-        ages=request.get("ages", []),
-        activities=request.get("activities", []),
-        trip_cost=request.get("trip_cost")
-    )
-    return result
+    # STEP 3: Combine matched policies with Ancileo prices
+    final_quotes = []
+    logger.info(f"Processing {len(matched_policies)} matched policies into quotes")
+    
+    for matched in matched_policies:
+        policy_name = matched["policy_name"]
+        product_code = matched["product_code"]
+        
+        # Get price from Ancileo if available, otherwise calculate default pricing based on trip
+        # Default pricing: base price * duration * travelers
+        base_price = 5.0  # SGD per day per person
+        if not ancileo_prices.get(product_code):
+            # Calculate trip duration
+            try:
+                from datetime import datetime
+                dep = datetime.strptime(trip_data["departure_date"], "%Y-%m-%d")
+                ret = datetime.strptime(trip_data["return_date"], "%Y-%m-%d")
+                duration = (ret - dep).days
+                price = base_price * duration * trip_data["pax"]
+                # Adjust price based on policy type
+                if "Pre-Ex" in policy_name:
+                    price *= 1.2  # Pre-existing conditions policy costs more
+                elif "Scootsurance" in policy_name:
+                    price *= 0.9  # Scootsurance is typically cheaper
+            except:
+                price = 50.0  # Fallback
+        else:
+            price = ancileo_prices.get(product_code, 50.0)
+        currency = ancileo_currencies.get(product_code, "SGD")
+        
+        # Get benefits from taxonomy
+        benefits = taxonomy_matcher.get_policy_benefits(product_code)
+        
+        # Build quote from matched policy - use actual policy name from taxonomy
+        quote = {
+            "plan_name": policy_name,
+            "product_code": product_code,
+            "price": round(price, 2),
+            "currency": currency,
+            "score": matched["score"],
+            "benefits": matched["benefits"],
+            "reasons": matched["reasons"],
+            "taxonomy_benefits": benefits,
+            "recommended_for": f"Score: {matched['score']}/100 - {', '.join(matched['reasons'][:2])}",
+            "source": "taxonomy_match",
+            "cost_source": "ancileo" if ancileo_quote_id and ancileo_prices.get(product_code) else "calculated"
+        }
+        final_quotes.append(quote)
+        logger.info(f"Added quote: {policy_name} (${quote['price']} {currency}, Score: {matched['score']}/100)")
+    
+    # Sort by score (highest first) - best matches first
+    final_quotes.sort(key=lambda x: x["score"], reverse=True)
+    
+    # Log final quotes
+    logger.info(f"✅ Returning {len(final_quotes)} applicable policies from taxonomy:")
+    for q in final_quotes:
+        logger.info(f"   - {q['plan_name']} (Score: {q.get('score', 'N/A')}/100, Price: ${q.get('price', 'N/A')} {q.get('currency', 'SGD')})")
+    
+    # Get trip details
+    trip_details_obj = {
+        "destination": trip_data["destination"],
+        "source": trip_data.get("source"),
+        "departure_date": trip_data["departure_date"],
+        "return_date": trip_data["return_date"],
+        "travelers": trip_data["pax"],
+        "ages": request.get("ages", []),
+        "activities": request.get("activities", []),
+        "trip_cost": request.get("trip_cost")
+    }
+    
+    # Build response - simple and clean
+    from datetime import datetime
+    return {
+        "success": True,
+        "source": "taxonomy_match",
+        "quote_id": ancileo_quote_id or f"quote_{datetime.now().strftime('%Y%m%d%H%M%S')}",
+        "quotes": final_quotes,
+        "trip_details": trip_details_obj,
+        "matching_method": "JSON Taxonomy Matching (Ancileo for costs only)",
+        "generated_at": datetime.now().isoformat()
+    }
 
 @app.post("/api/compare")
 async def compare_policies(request: dict):
