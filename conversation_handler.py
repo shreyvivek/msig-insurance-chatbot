@@ -28,21 +28,21 @@ class ConversationHandler:
         # Role definitions
         self.roles = {
             "travel_agent": {
-                "name": "Alex (Travel Agent)",
+                "name": "Wanda (Travel Agent)",
                 "tone": "professional, knowledgeable, detail-oriented",
                 "style": "Expert travel consultant with deep destination knowledge and insurance expertise",
                 "personality": "Helpful, efficient, organized, and focused on providing the best travel solutions",
                 "format_style": "structured, clear, with actionable recommendations"
             },
             "friend": {
-                "name": "Alex (Your Friend)",
+                "name": "Wanda (Your Friend)",
                 "tone": "casual, warm, enthusiastic",
                 "style": "Like your best friend who loves traveling and happens to know about insurance",
                 "personality": "Excited, personal, relatable, shares experiences",
                 "format_style": "conversational, friendly, with personal touches"
             },
             "expert": {
-                "name": "Alex (Expert Advisor)",
+                "name": "Wanda (Expert Advisor)",
                 "tone": "authoritative, precise, data-driven",
                 "style": "Insurance and travel expert with deep technical knowledge",
                 "personality": "Thorough, analytical, comprehensive, citation-focused",
@@ -460,7 +460,7 @@ Format it beautifully for easy reading!"""
         
         if role == "travel_agent":
             greeting = f"""━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-👋 Welcome! I'm Alex, Your Travel Agent
+👋 Welcome! I'm Wanda, Your Travel Agent
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 • Expert travel planning & insurance advice
@@ -471,7 +471,7 @@ Format it beautifully for easy reading!"""
 How can I help plan your next adventure? ✈️"""
         elif role == "friend":
             greeting = f"""━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-👋 Hey! I'm Alex, Your Travel Friend!
+👋 Hey! I'm Wanda, Your Travel Friend!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 • Let's plan something awesome together!
@@ -480,7 +480,7 @@ How can I help plan your next adventure? ✈️"""
 • Ready for an adventure? 🌍"""
         else:  # expert
             greeting = f"""━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-👋 Alex - Expert Travel & Insurance Advisor
+👋 Wanda - Expert Travel & Insurance Advisor
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 • Deep technical expertise in travel insurance

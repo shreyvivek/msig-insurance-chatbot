@@ -284,6 +284,70 @@ async def extract_trip(request: dict):
 
 @app.post("/api/quote")
 async def generate_quote(request: dict):
+    """Generate quote - optionally uses Ancileo API if configured"""
+    # Check if we should use Ancileo API (if API key is set and user requests it)
+    use_ancileo = request.get("use_ancileo_api", False)
+    
+    if use_ancileo:
+        try:
+            from ancileo_api import AncileoAPI
+            ancileo = AncileoAPI()
+            
+            # Parse trip details for Ancileo API
+            departure_date = request.get("start_date") or request.get("departure_date")
+            return_date = request.get("end_date") or request.get("return_date")
+            departure_country = request.get("departure_country", "SG")
+            arrival_country = request.get("arrival_country") or request.get("destination", "CN")
+            
+            # Convert destination name to country code if needed
+            if arrival_country and len(arrival_country) > 2:
+                # Simple mapping - can be enhanced
+                country_map = {
+                    "singapore": "SG", "china": "CN", "japan": "JP", 
+                    "thailand": "TH", "malaysia": "MY", "indonesia": "ID"
+                }
+                arrival_country = country_map.get(arrival_country.lower(), "CN")
+            
+            adults = request.get("travelers", 1)
+            children = request.get("children_count", 0)
+            
+            quote_result = await ancileo.get_quote(
+                departure_date=departure_date,
+                return_date=return_date,
+                departure_country=departure_country,
+                arrival_country=arrival_country,
+                adults_count=adults,
+                children_count=children
+            )
+            
+            if quote_result.get("success"):
+                # Convert Ancileo response to our format
+                ancileo_policies = quote_result.get("policies", [])
+                quotes = []
+                for policy in ancileo_policies:
+                    quotes.append({
+                        "plan_name": policy.get("product_name", "Ancileo Policy"),
+                        "price": policy.get("price", 0),
+                        "currency": policy.get("currency", "SGD"),
+                        "recommended_for": policy.get("description", "Travel protection"),
+                        "source": "ancileo",
+                        "offer_id": policy.get("offer_id"),
+                        "product_code": policy.get("product_code"),
+                        "coverage": policy.get("coverage", {})
+                    })
+                
+                return {
+                    "success": True,
+                    "source": "ancileo",
+                    "quote_id": quote_result.get("quote_id"),
+                    "quotes": quotes,
+                    "raw_data": quote_result.get("raw_response")
+                }
+        except Exception as e:
+            logger.error(f"Ancileo API quote failed: {e}")
+            # Fall through to local quote generation
+    
+    # Use local quote generation as fallback or default
     result = await doc_intel.generate_quote(
         destination=request.get("destination"),
         start_date=request.get("start_date"),
@@ -329,6 +393,62 @@ async def create_payment(request: dict):
 async def check_payment(payment_id: str):
     result = await payment_handler.check_payment_status(payment_id)
     return result
+
+@app.get("/api/ancileo/policies")
+async def get_ancileo_policies(
+    departure_country: str = "SG",
+    arrival_country: str = "CN",
+    departure_date: str = None,
+    return_date: str = None,
+    adults: int = 1,
+    children: int = 0
+):
+    """Get available policies from Ancileo API"""
+    try:
+        from ancileo_api import AncileoAPI
+        ancileo = AncileoAPI()
+        policies = await ancileo.get_available_policies(
+            departure_country=departure_country,
+            arrival_country=arrival_country,
+            departure_date=departure_date,
+            return_date=return_date,
+            adults=adults,
+            children=children
+        )
+        return {
+            "success": True,
+            "policies": policies,
+            "count": len(policies)
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "Failed to fetch policies from Ancileo API. Make sure ANCILEO_API_KEY is set in .env"
+        }
+
+@app.post("/api/ancileo/purchase")
+async def purchase_ancileo_policy(request: dict):
+    """Purchase policy through Ancileo API (after payment)"""
+    try:
+        from ancileo_api import AncileoAPI
+        ancileo = AncileoAPI()
+        result = await ancileo.purchase_policy(
+            quote_id=request.get("quote_id"),
+            offer_id=request.get("offer_id"),
+            product_code=request.get("product_code"),
+            product_type=request.get("product_type", "travel-insurance"),
+            unit_price=request.get("unit_price"),
+            currency=request.get("currency", "SGD"),
+            quantity=request.get("quantity", 1),
+            insureds=request.get("insureds", [])
+        )
+        return result
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
 if __name__ == "__main__":
     # Use port from environment variable or default to 8002

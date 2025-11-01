@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react'
-import { Send, Mic, Volume2, Sparkles, Plane, Settings, Upload, X, Briefcase, User, BookOpen, Check, History, ChevronLeft, ChevronRight, ExternalLink, Calendar } from 'lucide-react'
+import { Send, Mic, Volume2, Sparkles, Plane, Upload, X, History, ChevronLeft, ExternalLink } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
 // Policy Tooltip Component with Enhanced Details
@@ -88,7 +88,6 @@ interface Message {
   timestamp: Date
   images?: Array<{ destination: string; keyword: string; url: string }>
   booking_links?: Array<{ type: string; platform: string; url: string; text: string }>
-  role_type?: string
 }
 
 interface ConversationThread {
@@ -107,8 +106,6 @@ export default function Home() {
   const [isListening, setIsListening] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [language, setLanguage] = useState('en')
-  const [currentRole, setCurrentRole] = useState('travel_agent')
-  const [showRoleMenu, setShowRoleMenu] = useState(false)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [showHistory, setShowHistory] = useState(true)
@@ -148,7 +145,7 @@ export default function Home() {
         title: title || 'New Conversation',
         lastMessage: lastMessage.content.substring(0, 80).replace(/[#*━]/g, '').trim(),
         timestamp: lastMessage.timestamp,
-        role: (lastMessage as Message).role_type || currentRole,
+        role: 'travel_agent', // Default role for compatibility
         messageCount: messages.length,
       }
 
@@ -178,16 +175,14 @@ export default function Home() {
       const data = await response.json()
       setMessages([{
         role: 'assistant',
-        content: data.greeting || "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👋 Welcome! I'm Alex, Your Travel Insurance Agent\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n• Expert travel insurance advice\n• Compare policies instantly\n• Get quotes in seconds\n• Secure payment in chat\n\nHow can I help protect your trip? ✈️",
-        timestamp: new Date(),
-        role_type: currentRole
+        content: data.greeting || "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👋 Welcome! I'm Wanda, Your Travel Insurance Agent\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n• Expert travel insurance advice\n• Compare policies instantly\n• Get quotes in seconds\n• Secure payment in chat\n\nHow can I help protect your trip? ✈️",
+        timestamp: new Date()
       }])
     } catch (error) {
       setMessages([{
         role: 'assistant',
-        content: "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👋 Welcome! I'm Alex, Your Travel Insurance Agent\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n• Expert travel insurance advice\n• Compare policies instantly\n• Get quotes in seconds\n\nHow can I help protect your trip? ✈️",
-        timestamp: new Date(),
-        role_type: currentRole
+        content: "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👋 Welcome! I'm Wanda, Your Travel Insurance Agent\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n• Expert travel insurance advice\n• Compare policies instantly\n• Get quotes in seconds\n\nHow can I help protect your trip? ✈️",
+        timestamp: new Date()
       }])
     }
   }
@@ -214,8 +209,7 @@ export default function Home() {
           question: currentInput,
           language: language,
           user_id: 'default_user',
-          is_voice: false,
-          role: currentRole
+          is_voice: false
         })
       })
 
@@ -232,8 +226,7 @@ export default function Home() {
         content: answerText,
         timestamp: new Date(),
         images: data.images || [],
-        booking_links: data.booking_links || [],
-        role_type: data.role || currentRole
+        booking_links: data.booking_links || []
       }
 
       setMessages(prev => [...prev, assistantMessage])
@@ -246,8 +239,7 @@ export default function Home() {
       const errorMessage: Message = {
         role: 'assistant',
         content: '⚠️ **Error**\n\n• I encountered an error processing your request\n• Please try again',
-        timestamp: new Date(),
-        role_type: currentRole
+        timestamp: new Date()
       }
       setMessages(prev => [...prev, errorMessage])
     } finally {
@@ -302,8 +294,7 @@ export default function Home() {
           const successMsg: Message = {
             role: 'assistant',
             content: `✅ **Document Processed Successfully!**\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📄 Trip Details Extracted\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${tripInfo.destination ? `• Destination: ${tripInfo.destination}` : ''}${tripInfo.departure_date ? `\n• Departure: ${tripInfo.departure_date}` : ''}${tripInfo.return_date ? `\n• Return: ${tripInfo.return_date}` : ''}${tripInfo.travelers?.length ? `\n• Travelers: ${tripInfo.travelers.length}` : ''}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💡 Insurance Recommendations\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${quoteData.quotes?.map((q: any, i: number) => `• **${q.plan_name}**: $${q.price.toFixed(2)} - ${q.recommended_for}`).join('\n')}\n\nWhich plan would you like to learn more about?`,
-            timestamp: new Date(),
-            role_type: currentRole
+            timestamp: new Date()
           }
           
           setMessages(prev => [...prev, successMsg])
@@ -315,8 +306,7 @@ export default function Home() {
         const errorMsg: Message = {
           role: 'assistant',
           content: '⚠️ **Upload Error**\n\n• Could not extract trip information from document\n• Please try uploading a clearer document or describe your trip manually',
-          timestamp: new Date(),
-          role_type: currentRole
+          timestamp: new Date()
         }
         setMessages(prev => [...prev, errorMsg])
       } finally {
@@ -326,27 +316,6 @@ export default function Home() {
     }
     
     reader.readAsDataURL(file)
-  }
-
-  const handleRoleChange = async (role: string) => {
-    try {
-      const response = await fetch(`${API_URL}/api/role/set`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: 'default_user',
-          role: role
-        })
-      })
-      
-      const data = await response.json()
-      if (data.success) {
-        setCurrentRole(role)
-        setShowRoleMenu(false)
-      }
-    } catch (error) {
-      console.error('Role change error:', error)
-    }
   }
 
   const startVoiceInput = () => {
@@ -405,36 +374,8 @@ export default function Home() {
     }
   }
 
-  const roles = [
-    { id: 'travel_agent', name: 'Travel Agent', icon: Briefcase, color: 'blue' },
-    { id: 'friend', name: 'Friend', icon: User, color: 'green' },
-    { id: 'expert', name: 'Expert', icon: BookOpen, color: 'orange' }
-  ]
-
-  const currentRoleInfo = roles.find(r => r.id === currentRole)
-
-  const getRoleIcon = (role: string) => {
-    const roleInfo = roles.find(r => r.id === role)
-    return roleInfo?.icon || Briefcase
-  }
-
-  const getRoleColorClasses = (role: string) => {
-    const colorMap: Record<string, { bg: string; text: string }> = {
-      'blue': { bg: 'bg-blue-600/20', text: 'text-blue-400' },
-      'green': { bg: 'bg-green-600/20', text: 'text-green-400' },
-      'orange': { bg: 'bg-orange-600/20', text: 'text-orange-400' }
-    }
-    const roleInfo = roles.find(r => r.id === role)
-    const color = roleInfo?.color || 'blue'
-    return colorMap[color] || colorMap['blue']
-  }
-
-  const formatRoleName = (role: string): string => {
-    return roles.find(r => r.id === role)?.name || 'Travel Agent'
-  }
-
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100 relative overflow-hidden">
+    <div className="h-screen bg-gray-900 text-gray-100 relative overflow-hidden">
       {/* Animated Background */}
       <div className="fixed inset-0 z-0">
         <div className="absolute top-0 left-0 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl animate-pulse-slow"></div>
@@ -487,15 +428,13 @@ export default function Home() {
               </div>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+            <div className="flex-1 overflow-y-auto p-4 space-y-2 min-h-0 scrollbar-thin">
               {conversationThreads.length === 0 ? (
                 <div className="text-center text-gray-500 text-sm py-8">
                   No conversation history yet
                 </div>
               ) : (
                 conversationThreads.map((thread) => {
-                  const RoleIcon = getRoleIcon(thread.role)
-                  const roleColors = getRoleColorClasses(thread.role)
                   return (
                     <div
                       key={thread.id}
@@ -508,12 +447,11 @@ export default function Home() {
                       }`}
                     >
                       <div className="flex items-start gap-2 mb-2">
-                        <div className={`p-1.5 rounded ${roleColors.bg}`}>
-                          <RoleIcon className={`w-4 h-4 ${roleColors.text}`} />
+                        <div className="p-1.5 rounded bg-blue-600/20">
+                          <Sparkles className="w-4 h-4 text-blue-400" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-white truncate">{thread.title}</p>
-                          <p className="text-xs text-gray-400 mt-0.5">{formatRoleName(thread.role)}</p>
                         </div>
                       </div>
                       <p className="text-xs text-gray-500 line-clamp-2 mb-2">{thread.lastMessage}</p>
@@ -530,9 +468,9 @@ export default function Home() {
         </div>
 
         {/* Main Content */}
-        <div className={`flex-1 transition-all duration-300 ${showHistory ? 'ml-80' : 'ml-0'}`}>
+        <div className={`flex-1 flex flex-col h-full overflow-hidden transition-all duration-300 ${showHistory ? 'ml-80' : 'ml-0'}`}>
           {/* Clean, Sleek Header - with backdrop blur */}
-          <header className="bg-gray-800/90 backdrop-blur-md border-b border-gray-700 shadow-lg">
+          <header className="bg-gray-800/90 backdrop-blur-md border-b border-gray-700 shadow-lg flex-shrink-0">
             <div className="max-w-5xl mx-auto px-6 py-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -549,47 +487,15 @@ export default function Home() {
                   </div>
                   <div>
                     <h1 className="text-xl font-bold text-white">WanderSure</h1>
-                    <p className="text-xs text-gray-400">Alex • {currentRoleInfo?.name || 'Travel Agent'}</p>
+                    <p className="text-xs text-gray-400">Wanda • Travel Insurance Agent</p>
                   </div>
-                </div>
-                
-                <div className="relative">
-                  <button
-                    onClick={() => setShowRoleMenu(!showRoleMenu)}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-gray-200 text-sm transition-colors"
-                  >
-                    <Settings className="w-4 h-4" />
-                    <span className="hidden sm:inline">{currentRoleInfo?.name}</span>
-                    {showRoleMenu && (
-                      <div className="absolute top-full right-0 mt-2 w-48 bg-gray-800 rounded-lg shadow-xl border border-gray-700 p-2 z-50">
-                        {roles.map((role) => {
-                          const Icon = role.icon
-                          return (
-                            <button
-                              key={role.id}
-                              onClick={() => handleRoleChange(role.id)}
-                              className={`w-full flex items-center gap-2 px-3 py-2 rounded-md transition-all text-sm ${
-                                currentRole === role.id
-                                  ? 'bg-blue-600 text-white font-medium'
-                                  : 'text-gray-300 hover:bg-gray-700'
-                              }`}
-                            >
-                              <Icon className="w-4 h-4" />
-                              <span>{role.name}</span>
-                              {currentRole === role.id && <Check className="w-4 h-4 ml-auto" />}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </button>
                 </div>
               </div>
             </div>
           </header>
 
           {/* Messages - Dark Mode */}
-          <div className="flex-1 overflow-y-auto px-4 py-6">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-6 scrollbar-thin" style={{ minHeight: 0 }}>
             <div className="max-w-4xl mx-auto space-y-4">
               {messages.map((message, index) => (
                 <div
@@ -760,6 +666,7 @@ export default function Home() {
                 )}
               </div>
             ))}
+            </div>
             
             {isLoading && (
               <div className="flex justify-start gap-3">
@@ -793,11 +700,10 @@ export default function Home() {
             
             <div ref={messagesEndRef} />
           </div>
-          </div>
           
           {/* File Upload Indicator - Dark Mode */}
           {uploadedFile && (
-            <div className="px-4 py-2 bg-gray-800 border-t border-gray-700">
+            <div className="px-4 py-2 bg-gray-800 border-t border-gray-700 flex-shrink-0">
               <div className="max-w-5xl mx-auto flex items-center justify-between">
                 <div className="flex items-center gap-2 text-sm text-gray-300">
                   <Upload className="w-4 h-4 text-blue-400" />
@@ -815,7 +721,7 @@ export default function Home() {
           )}
 
           {/* Clean Input Bar - Dark Mode */}
-          <div className="bg-gray-800/90 backdrop-blur-md border-t border-gray-700 p-4 shadow-lg">
+          <div className="bg-gray-800/90 backdrop-blur-md border-t border-gray-700 p-4 shadow-lg flex-shrink-0">
           <div className="max-w-5xl mx-auto">
             <div className="flex items-center gap-2">
               <input
@@ -836,13 +742,23 @@ export default function Home() {
                 <Upload className="w-5 h-5" />
               </button>
               
-              <div className="flex-1 bg-gray-700 rounded-xl border border-gray-600 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all">
+              <div className="flex-1 bg-gray-700/80 rounded-xl border border-gray-600 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all backdrop-blur-sm">
                 <textarea
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
+                  onChange={(e) => {
+                    setInput(e.target.value)
+                    // Auto-resize textarea
+                    e.target.style.height = 'auto'
+                    e.target.style.height = `${Math.min(e.target.scrollHeight, 128)}px`
+                  }}
                   onKeyDown={handleKeyPress}
                   placeholder="Ask about travel insurance or upload a booking document..."
-                  className="w-full bg-transparent border-none outline-none px-4 py-3 text-gray-200 placeholder-gray-500 resize-none min-h-[48px] max-h-32 overflow-y-auto"
+                  className="w-full bg-transparent border-none outline-none px-4 py-3.5 text-gray-100 placeholder-gray-400 resize-none min-h-[48px] max-h-32 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent leading-relaxed"
+                  style={{ 
+                    fontSize: '15px',
+                    fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+                    letterSpacing: '0.01em'
+                  }}
                   disabled={isLoading || isUploading}
                   rows={1}
                 />

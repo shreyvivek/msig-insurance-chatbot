@@ -150,14 +150,39 @@
 /* Custom Scrollbar */
 .scrollbar-thin {
   scrollbar-width: thin;
+  scrollbar-color: rgba(75, 85, 99, 0.5) transparent;
 }
 
-.scrollbar-thumb-purple-500\/30::-webkit-scrollbar-thumb {
-  background: rgba(168, 85, 247, 0.3);
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 10px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.5);
+  border-radius: 10px;
+  transition: background 0.2s;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(96, 165, 250, 0.6);
+}
+
+.scrollbar-thumb-gray-600::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.6) !important;
+}
+
+.scrollbar-thumb-gray-600::-webkit-scrollbar-thumb:hover {
+  background: rgba(96, 165, 250, 0.7) !important;
 }
 
 .scrollbar-track-transparent::-webkit-scrollbar-track {
-  background: transparent;
+  background: transparent !important;
 }
 
 ::-webkit-scrollbar {
@@ -170,12 +195,12 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(168, 85, 247, 0.5) 0%, rgba(59, 130, 246, 0.5) 100%);
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.5) 0%, rgba(96, 165, 250, 0.5) 100%);
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, rgba(168, 85, 247, 0.7) 0%, rgba(59, 130, 246, 0.7) 100%);
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.7) 0%, rgba(96, 165, 250, 0.7) 100%);
 }
 
 /* Animations for animated background */

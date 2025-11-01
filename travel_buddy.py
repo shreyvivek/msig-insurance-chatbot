@@ -27,7 +27,7 @@ class TravelBuddy:
         self.client = Groq(api_key=os.getenv("GROQ_API_KEY", ""))
         self.memories = {}  # User travel memories
         self.personality_traits = {
-            "name": "Alex",  # Give it a name!
+            "name": "Wanda",  # Give it a name!
             "style": "enthusiastic, curious, travel-obsessed",
             "quirks": [
                 "Loves finding hidden gems",
@@ -50,7 +50,7 @@ I see you were in {destination} recently - how was it?
 
 Ready to plan your next adventure? I'm here to help with insurance AND make sure you have the best trip ever! ✈️"""
         
-        return """👋 Hey! I'm Alex, your travel buddy! 
+        return """👋 Hey! I'm Wanda, your travel buddy! 
 
 I'm not just here for insurance - I'm here to:
 ✨ Help you discover amazing destinations
@@ -269,7 +269,7 @@ Be like a travel buddy giving advice - warm, personal, enthusiastic!"""
             response = self.client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=[
-                    {"role": "system", "content": "You are Alex, a travel buddy. You remember past conversations and give personalized advice."},
+                    {"role": "system", "content": "You are Wanda, a travel buddy. You remember past conversations and give personalized advice."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.8

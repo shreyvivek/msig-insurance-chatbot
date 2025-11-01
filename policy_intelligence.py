@@ -23,6 +23,17 @@ class PolicyIntelligence:
         self.taxonomy_path = Path(__file__).parent / "Taxonomy" / "Taxonomy_Hackathon.json"
         self.normalized_data = {}
         self.policy_texts = {}
+        
+        # Try to initialize Ancileo API integration
+        self.ancileo_api = None
+        try:
+            from ancileo_api import AncileoAPI
+            self.ancileo_api = AncileoAPI()
+            logger.info("Ancileo API integration available")
+        except Exception as e:
+            logger.warning(f"Ancileo API not available: {e}")
+            self.ancileo_api = None
+        
         self._load_taxonomy()
         self._extract_policies()
     
@@ -145,9 +156,32 @@ Return JSON matching the taxonomy structure for {product_name}."""
         
         logger.info("Policy normalization complete")
     
-    def get_policy_list(self) -> List[Dict]:
-        """Get list of available policies"""
-        return list(self.policy_texts.values())
+    async def get_policy_list(self, include_ancileo: bool = True) -> List[Dict]:
+        """Get list of available policies (local + Ancileo API if available)"""
+        policies = list(self.policy_texts.values())
+        
+        # If Ancileo API is available, fetch additional policies
+        if include_ancileo and self.ancileo_api:
+            try:
+                ancileo_policies = await self.ancileo_api.get_available_policies()
+                for ancileo_policy in ancileo_policies:
+                    # Convert Ancileo policy format to our format
+                    policy_entry = {
+                        "id": ancileo_policy.get("product_code", f"ancileo_{ancileo_policy.get('offer_id')}"),
+                        "name": ancileo_policy.get("product_name", "Ancileo Policy"),
+                        "source": "ancileo",
+                        "price": ancileo_policy.get("price"),
+                        "currency": ancileo_policy.get("currency", "SGD"),
+                        "description": ancileo_policy.get("description", ""),
+                        "coverage": ancileo_policy.get("coverage", {}),
+                        "raw_data": ancileo_policy
+                    }
+                    policies.append(policy_entry)
+                logger.info(f"Added {len(ancileo_policies)} policies from Ancileo API")
+            except Exception as e:
+                logger.error(f"Failed to fetch Ancileo policies: {e}")
+        
+        return policies
     
     def get_policy_text(self, policy_id: str) -> Optional[str]:
         """Get full text of a policy"""
