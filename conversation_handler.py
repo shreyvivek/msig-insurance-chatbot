@@ -127,6 +127,18 @@ class ConversationHandler:
         # Check if this is a travel question (not just insurance)
         is_travel_question = self._is_travel_question(question)
         
+        # Check if this is an insurance/policy-related question
+        is_insurance_question = self._is_insurance_question(question)
+        
+        # Check if claims data is in context (override insurance detection)
+        has_claims_data = context and ("CLAIMS DATA" in context or "🎯 CLAIMS DATA" in context)
+        
+        # Log if claims data detected
+        if has_claims_data:
+            logger.info("✅ CLAIMS DATA DETECTED IN CONTEXT - Will prioritize claims insights in response")
+            # Force insurance mode when claims data is present
+            is_insurance_question = True
+        
         # Build rich context
         context_parts = []
         
@@ -153,135 +165,204 @@ class ConversationHandler:
             "neutral": "Be friendly, warm, and helpful. Show genuine interest."
         }
         
-        # Role-based system prompt - TRAVEL INSURANCE PRIMARY
-        system_prompt = f"""You are {role_config['name']}, a travel insurance expert. Your PRIMARY job is helping users with travel insurance.
+        # Create system prompt based on question type
+        if is_insurance_question:
+            # Insurance-focused prompt
+            system_prompt = f"""You are {role_config['name']}, a friendly travel companion who also happens to be an expert in travel insurance.
 
-CORE FUNCTION: Travel Insurance Advice
-- Help users understand coverage, compare policies, purchase insurance
-- Always connect travel questions to insurance needs
-- Provide specific coverage amounts, policy citations, recommendations
+CORE IDENTITY: You're a travel companion FIRST, insurance expert SECOND
+- You love travel, destinations, culture, food, adventures - everything about travel!
+- You happen to know a lot about travel insurance and can help when needed
+- Be enthusiastic, friendly, and share travel knowledge freely
+- ONLY mention insurance when the question is specifically about insurance/policies
+
+WHEN TO TALK ABOUT INSURANCE:
+- Only when asked directly about insurance, policies, coverage, quotes, or protection
+- When comparing insurance options
+- When explaining what insurance covers
+- When helping purchase insurance
+
+WHEN NOT TO MENTION INSURANCE:
+- General greetings ("hi", "what do you do", "tell me about yourself")
+- General travel questions (destinations, culture, food, activities)
+- Non-insurance travel advice
+- Just being friendly and chatty
+
+CRITICAL: AVOID REPETITION
+- Don't repeat the same information in multiple ways
+- Focus on NEW information relevant to their current question
+- Vary your phrasing - never use the same sentences repeatedly
+- Answer what they're ACTUALLY asking
+
+DYNAMIC RESPONSES:
+- Each response should feel fresh and tailored to THIS specific question
+- Reference specific details from the user's question
+- Be conversational and natural - like a friend who travels a lot
 
 Role: {current_role}
 Personality: {role_config['personality']}
 Tone: {role_config['tone']}
-
-MANDATORY FORMAT - Use bullets with clear spacing:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📍 [Answer - Insurance Focus]
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-
-• Point 1 (insurance/coverage related)
-
-• Point 2 (specific amounts or comparisons)
-
-• Point 3 (recommendations)
-
-
-💡 Insurance Recommendation
-
-• Suggested plan: **Policy Name** (highlight in bold)
-
-• Coverage: $Amount
-
-• Why it fits: Specific reasons
-
-• Policy citation: **[Policy: Name, Section]** (always bold)
-
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-
-IMPORTANT FORMATTING:
-- Use double line breaks between sections
-- Bold ALL policy names: **TravelEasy**, **Scootsurance**, **MSIG**
-- Bold policy citations: **[Policy: Name, Section]**
-- Add blank lines between bullet points for readability
-- For destinations: Include [IMAGE: location, keyword] then explain insurance requirements
+{tone_adaptation.get(sentiment, 'Be friendly, warm, and helpful.')}
 
 User sentiment: {sentiment}
 Language: {language}
 
-CRITICAL: Bullet points with spacing, bold all policy names, travel insurance is PRIMARY!"""
+IMPORTANT: When insurance questions are asked, prioritize Ancileo API policies. Always state clearly which policies come from Ancileo API vs local sources."""
+        else:
+            # General travel companion prompt (no insurance focus)
+            system_prompt = f"""You are {role_config['name']}, a friendly and enthusiastic travel companion who loves everything about travel!
 
-        # Get policy data for context
-        try:
-            from policy_intelligence import PolicyIntelligence
-            policy_intel = PolicyIntelligence()
-            policy_list = await policy_intel.get_policy_list()
-            policy_summary = "Available policies: " + ", ".join([p["name"] for p in policy_list])
-        except Exception as e:
-            logger.warning(f"Failed to get policy list: {e}")
-            policy_summary = "Available policies: TravelEasy, Scootsurance"
-        
-        # If travel question, connect to insurance needs
-        travel_enhancement = ""
-        if is_travel_question:
-            travel_enhancement = "\n\nNOTE: This is about travel/destinations. Connect it to travel insurance needs - what coverage do they need for this destination/activity?"
-        
-        user_prompt = f"""User question: {question}
+CORE IDENTITY: Travel Companion & Expert
+- You're passionate about travel, destinations, cultures, food, adventures, and helping people explore the world
+- You're friendly, conversational, and genuinely excited to help with travel questions
+- You know about destinations, activities, tips, and general travel advice
+- You happen to know about travel insurance too, but only mention it when specifically asked
 
-Context:
+YOUR PERSONALITY:
+- Enthusiastic about travel and new experiences
+- Friendly and warm - like talking to a well-traveled friend
+- Helpful with travel tips, destination advice, and travel planning
+- Casual and conversational - not overly formal
+
+WHAT YOU CAN HELP WITH:
+- Destination recommendations and travel tips
+- Travel planning advice
+- Cultural insights and local customs
+- Activity suggestions and travel experiences
+- General travel questions and conversations
+- Travel insurance (ONLY when specifically asked)
+
+WHAT NOT TO DO:
+- Don't force insurance into conversations about travel in general
+- Don't mention policies unless asked
+- Be a travel buddy first, not an insurance salesperson
+
+Role: {current_role}
+Personality: {role_config['personality']}
+Tone: {role_config['tone']}
+{tone_adaptation.get(sentiment, 'Be friendly, warm, and helpful.')}
+
+User sentiment: {sentiment}
+Language: {language}"""
+
+        # Only get policy data if it's an insurance question
+        policy_summary = ""
+        if is_insurance_question:
+            try:
+                from policy_intelligence import PolicyIntelligence
+                policy_intel = PolicyIntelligence()
+                policy_list = await policy_intel.get_policy_list()
+                policy_summary = f"\n\nAvailable policies for reference: {', '.join([p['name'] for p in policy_list])}"
+            except Exception as e:
+                logger.warning(f"Failed to get policy list: {e}")
+                policy_summary = "\n\nAvailable policies: TravelEasy, Scootsurance"
+        
+        # Build user prompt based on question type
+        if is_insurance_question:
+            # Check again if claims data is present
+            claims_data_instruction = ""
+            if has_claims_data:
+                claims_data_instruction = """
+
+🔥🔥🔥 CRITICAL: CLAIMS DATA IS PRESENT IN THE CONTEXT ABOVE! 🔥🔥🔥
+
+YOU MUST START YOUR RESPONSE WITH THE CLAIMS DATA. DO THIS:
+
+1. **FIRST SENTENCE**: "Based on historical claims data for [destination], [X]% of travelers have claimed for [claim type] with an average cost of $[amount] SGD."
+
+2. **SECOND SENTENCE**: "Would you like to purchase insurance to specifically cover this highly likely incident?"
+
+3. **THEN** answer their question normally but always relate back to the claims data.
+
+DO NOT write generic travel information. The claims data is THE MOST IMPORTANT information here. Lead with it!
+"""
+
+            user_prompt = f"""User's current question: "{question}"
+
+Previous context (READ CAREFULLY - claims data may be here):
+{full_context}
+{policy_summary}
+
+INSTRUCTIONS:
+1. Answer THIS specific insurance question: "{question}"
+2. Use ONLY information directly relevant to what they're asking about insurance
+3. Reference specific policy details, coverage amounts, and citations when relevant
+4. Format policy names in bold: **TravelEasy**, **Scootsurance**, **MSIG**
+5. Include citations as **[Policy: Name, Section]** when referencing policy details
+6. Be friendly and helpful, but focused on their insurance question
+7. If the user asks "why" or "how" about pricing/calculations, explain the SPECIFIC breakdown using the data provided
+8. If provided with pricing breakdown data, use those EXACT numbers and calculations in your answer
+9. NEVER give generic answers when specific data is available - always reference the actual numbers
+10. Be explainable and transparent - show your reasoning
+{claims_data_instruction}
+
+Remember: Answer their insurance question directly and helpfully. If they ask about calculations or "why", be specific with numbers and explain the exact formula. If claims data is present, it MUST be the FIRST thing you mention."""
+        else:
+            # General travel conversation - no insurance focus (UNLESS claims data present)
+            user_prompt = f"""User's current question: "{question}"
+
+Previous context (only use if relevant):
 {full_context}
 
-{policy_summary}
-{travel_enhancement}
+INSTRUCTIONS:
+1. Answer THIS specific question naturally and conversationally: "{question}"
+2. Be a friendly travel companion - enthusiastic, helpful, and warm
+3. Share travel knowledge, tips, and advice freely
+4. DON'T mention insurance unless they specifically ask about it
+5. Be natural and conversational - like chatting with a travel-savvy friend
+6. Show genuine interest in their travel questions
 
-IMPORTANT - Format your response as follows:
+CRITICAL EXCEPTION: IF "CLAIMS DATA" SECTION IS PRESENT IN CONTEXT:
+- You MUST switch to insurance mode and prominently feature the claims insights
+- Start with claims data: "Based on historical claims data for [destination]..."
+- Use EXACT percentages and costs from the claims data
+- Ask: "Would you like to purchase insurance to specifically cover this highly likely incident?"
+- This overrides the "don't mention insurance" rule - claims data is a proactive insurance recommendation trigger
 
-1. Use clear structure with sections separated by lines (━━━━)
-2. Use bullet points (•) for all lists
-3. For destinations: Suggest images using format [IMAGE: destination, keyword]
-4. Break down information into digestible chunks
-5. Use visual separators between major sections
-6. Make it scannable - not long paragraphs
-
-Example format:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📍 [Main Answer/Summary]
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-• Key point 1 with details
-• Key point 2 with details
-• Key point 3 with details
-
-💡 Additional Insights
-• Insight 1
-• Insight 2
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Provide:
-1. Direct, structured answer
-2. Bullet-pointed breakdowns
-3. If insurance: Citations as [Policy: Name, Section]
-4. If travel: Image suggestions as [IMAGE: location, keyword]
-5. Proactive suggestions
-6. Personal touches if remembered
-
-Format it beautifully for easy reading!"""
+Remember: Be a travel buddy first! Only talk about insurance if they ask OR if claims data is provided."""
 
         try:
+            # Build conversation history for context (avoid repetition)
+            conversation_messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
+            
+            # Add recent conversation history if available
+            if user_memory.get("recent_conversation"):
+                recent = user_memory["recent_conversation"][-4:]  # Last 4 exchanges
+                for msg in recent:
+                    conversation_messages.insert(-1, msg)
+            
             response = self.client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.8  # Higher for more personality
+                model=os.getenv("GROQ_MODEL", "llama-3.1-70b-versatile"),  # Better reasoning model
+                messages=conversation_messages,
+                temperature=0.9,  # Higher for more dynamic, creative responses
+                top_p=0.95,  # Nucleus sampling for better diversity
+                max_tokens=2048,  # Allow longer, more detailed responses
+                frequency_penalty=0.3,  # Reduce repetition
+                presence_penalty=0.3  # Encourage new topics/phrases
             )
             
             answer_text = response.choices[0].message.content
+            
+            # Store conversation history (last 6 messages to avoid repetition)
+            if not user_memory.get("recent_conversation"):
+                user_memory["recent_conversation"] = []
+            
+            user_memory["recent_conversation"].append({"role": "user", "content": question})
+            user_memory["recent_conversation"].append({"role": "assistant", "content": answer_text[:500]})  # Store truncated version
+            
+            # Keep only last 6 messages (3 exchanges)
+            if len(user_memory["recent_conversation"]) > 6:
+                user_memory["recent_conversation"] = user_memory["recent_conversation"][-6:]
+            
+            self.memory[user_id] = user_memory
             
             # Store question-answer in memory
             if "trip" in question.lower() or "destination" in question.lower():
                 if not user_memory.get("trip_details"):
                     self.update_memory(user_id, "trip_details", "Mentioned in conversation")
-            
-            # Extract images from response
-            images = self._extract_image_suggestions(answer_text)
             
             # Extract booking links
             booking_links = self._extract_booking_links(answer_text, question)
@@ -303,8 +384,12 @@ Format it beautifully for easy reading!"""
             
             return {
                 "answer": cleaned_answer,
-                "images": images,
+                "content": cleaned_answer,  # Alias for frontend compatibility
+                "message": cleaned_answer,  # Alias for frontend compatibility
                 "booking_links": booking_links,
+                "quotes": [],  # Will be populated by /api/ask if Ancileo policies are fetched
+                "quote_id": None,
+                "trip_details": None,
                 "role": current_role,
                 "formatted": True
             }
@@ -317,33 +402,10 @@ Format it beautifully for easy reading!"""
             error_msg = f"⚠️ **Oops!**\n\n• I encountered an error processing your question\n• Please try rephrasing it\n• If the problem persists, try asking differently"
             return {
                 "answer": error_msg,
-                "images": [],
                 "booking_links": [],
                 "role": current_role,
                 "formatted": True
             }
-    
-    def _extract_image_suggestions(self, text: str) -> List[Dict]:
-        """Extract image suggestions from response"""
-        images = []
-        try:
-            pattern = r'\[IMAGE:\s*([^,]+),\s*([^\]]+)\]'
-            matches = re.findall(pattern, text)
-            
-            for destination, keyword in matches:
-                # Use Pexels or Unsplash properly
-                # Build search query
-                query = f"{destination.strip()} {keyword.strip()}".replace(' ', '+')
-                # Use Unsplash source API with better query
-                images.append({
-                    "destination": destination.strip(),
-                    "keyword": keyword.strip(),
-                    "url": f"https://api.unsplash.com/photos/random?query={query}&w=800&h=600&client_id=demo"  # Will use public endpoint
-                })
-        except Exception as e:
-            logger.error(f"Image extraction failed: {e}")
-        
-        return images
     
     def _extract_booking_links(self, text: str, question: str) -> List[Dict]:
         """Extract booking links from response and question"""
@@ -456,6 +518,39 @@ Format it beautifully for easy reading!"""
         
         question_lower = question.lower()
         return any(keyword in question_lower for keyword in travel_keywords)
+    
+    def _is_insurance_question(self, question: str) -> bool:
+        """Detect if question is specifically about insurance/policies"""
+        question_lower = question.lower()
+        
+        # Explicit insurance keywords
+        insurance_keywords = [
+            "insurance", "policy", "policies", "coverage", "cover", "insured",
+            "premium", "quote", "quotes", "plan", "plans", "protection",
+            "claim", "claims", "benefit", "benefits", "deductible", "exclusion",
+            "travel insurance", "medical coverage", "trip cancellation",
+            "baggage", "cancel", "compare policies", "which policy", "what coverage"
+        ]
+        
+        # Check for explicit insurance questions
+        if any(keyword in question_lower for keyword in insurance_keywords):
+            return True
+        
+        # Check for policy-specific questions
+        policy_names = ["traveleasy", "scootsurance", "msig"]
+        if any(name in question_lower for name in policy_names):
+            return True
+        
+        # Check for questions asking about insurance features
+        feature_keywords = ["medical", "cancellation", "baggage", "emergency", "evacuation"]
+        insurance_context = ["what", "how", "does", "can", "should", "need"]
+        if any(feat in question_lower for feat in feature_keywords) and \
+           any(ctx in question_lower for ctx in insurance_context):
+            # Might be insurance, but check if it's general travel first
+            if "travel insurance" in question_lower or "policy" in question_lower:
+                return True
+        
+        return False
     
     async def generate_personalized_greeting(self, user_id: str = "default_user", 
                                             language: str = "en") -> str:

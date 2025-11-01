@@ -11,6 +11,7 @@ paddleocr>=2.7.0
 
 # AWS/Database
 boto3>=1.35.0
+psycopg2-binary>=2.9.9  # PostgreSQL adapter for claims database
 
 # Payment Processing
 stripe>=11.0.0

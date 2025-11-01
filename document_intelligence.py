@@ -200,13 +200,29 @@ Extract all available information. Use null only for fields completely absent.""
                 "validation_questions": []
             }
             
-            # Check for missing critical fields
+            # Validate ALL critical fields before suggesting
+            validation_questions = []
+            missing_critical = False
+            
             if not extracted.get("destination"):
-                result["validation_questions"].append("What is your trip destination?")
+                validation_questions.append("What is your trip destination? (city and country)")
+                missing_critical = True
             if not extracted.get("departure_date"):
-                result["validation_questions"].append("When does your trip start?")
+                validation_questions.append("When does your trip start? (departure date)")
+                missing_critical = True
             if not extracted.get("return_date"):
-                result["validation_questions"].append("When does your trip end?")
+                validation_questions.append("When does your trip end? (return date)")
+                missing_critical = True
+            if not extracted.get("travelers") or len(extracted.get("travelers", [])) == 0:
+                validation_questions.append("How many travelers? And what are their ages?")
+                missing_critical = True
+            
+            result["validation_questions"] = validation_questions
+            result["missing_critical_fields"] = missing_critical
+            result["ready_for_quote"] = not missing_critical
+            
+            if missing_critical:
+                result["message"] = "I need a bit more information before I can suggest insurance options. Please provide the missing details."
             
             return result
         
@@ -301,7 +317,7 @@ Extract all available information. Use null only for fields completely absent.""
             age=sum(ages) // len(ages) if ages else 30
         )
         
-        # Create quote options
+        # Create quote options - marked as local
         quotes = [
             {
                 "plan_name": "Basic",
@@ -310,7 +326,8 @@ Extract all available information. Use null only for fields completely absent.""
                 "baggage": 1000,
                 "price": round(final_price * 0.8, 2),
                 "currency": "SGD",
-                "recommended_for": "Budget-conscious travelers"
+                "recommended_for": "Budget-conscious travelers",
+                "source": "local"  # Clearly marked as local/preset
             },
             {
                 "plan_name": "Standard",
@@ -319,7 +336,8 @@ Extract all available information. Use null only for fields completely absent.""
                 "baggage": 2000,
                 "price": round(final_price, 2),
                 "currency": "SGD",
-                "recommended_for": "Most travelers"
+                "recommended_for": "Most travelers",
+                "source": "local"  # Clearly marked as local/preset
             },
             {
                 "plan_name": "Premium",
@@ -328,7 +346,8 @@ Extract all available information. Use null only for fields completely absent.""
                 "baggage": 5000,
                 "price": round(final_price * 1.5, 2),
                 "currency": "SGD",
-                "recommended_for": "Comprehensive protection"
+                "recommended_for": "Comprehensive protection",
+                "source": "local"  # Clearly marked as local/preset
             }
         ]
         

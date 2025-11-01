@@ -1,16 +1,36 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react'
-import { Send, Mic, Volume2, Sparkles, Plane, Upload, X, History, ChevronLeft, ExternalLink } from 'lucide-react'
+import { Send, Mic, Volume2, Sparkles, Plane, Upload, X, History, ChevronLeft, ExternalLink, ShoppingCart, User, CreditCard, Mail, Phone, Calendar } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
+// Function to clean policy names for display
+function cleanPolicyName(name: string): string {
+  if (!name) return '';
+  return name
+    .replace(/#+/g, '') // Remove hashes
+    .replace(/[#@$%^&*()_+=\[\]{}|\\:";\'<>?,./`~]/g, ' ') // Remove special chars
+    .replace(/^\s+|\s+$/g, '') // Trim
+    .replace(/\s+/g, ' '); // Normalize spaces
+}
+
 // Policy Card Component - Beautiful card for displaying policy info
-function PolicyCard({ policyName, onClick }: { policyName: string; onClick: () => void }) {
+function PolicyCard({ policyName, onClick, isAncileo, source }: { 
+  policyName: string
+  onClick: () => void
+  isAncileo?: boolean
+  source?: string
+}) {
+  const cleanedName = cleanPolicyName(policyName);
   const getPolicyStyles = (name: string) => {
-    if (name.includes('TravelEasy')) {
+    if (isAncileo || source === 'ancileo') {
+      return 'from-purple-600 to-pink-600 shadow-purple-500/20 hover:shadow-purple-500/40'
+    }
+    const lowerName = name.toLowerCase();
+    if (lowerName.includes('traveleasy')) {
       return 'from-blue-500 to-cyan-500 shadow-blue-500/20 hover:shadow-blue-500/40'
     }
-    if (name.includes('Scootsurance')) {
+    if (lowerName.includes('scootsurance')) {
       return 'from-purple-500 to-pink-500 shadow-purple-500/20 hover:shadow-purple-500/40'
     }
     return 'from-indigo-500 to-blue-500 shadow-indigo-500/20 hover:shadow-indigo-500/40'
@@ -19,42 +39,68 @@ function PolicyCard({ policyName, onClick }: { policyName: string; onClick: () =
   return (
     <button
       onClick={onClick}
-      className={`group relative overflow-hidden rounded-xl bg-gradient-to-br ${getPolicyStyles(policyName)} p-5 text-left transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl border border-white/10`}
+      className={`group relative overflow-hidden rounded-xl bg-gradient-to-br ${getPolicyStyles(cleanedName)} p-5 text-left transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl border border-white/10 h-full flex flex-col min-h-[140px]`}
     >
       <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
       <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500"></div>
-      <div className="relative z-10">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="font-bold text-white text-lg drop-shadow-lg">{policyName}</h3>
-          <div className="p-2 bg-white/20 rounded-lg group-hover:bg-white/30 transition-colors">
-            <ExternalLink className="w-4 h-4 text-white" />
-          </div>
+      <div className="relative z-10 flex flex-col flex-1">
+        <div className="flex items-start justify-between mb-2">
+          <h3 className="font-bold text-white text-lg drop-shadow-lg line-clamp-2 flex-1">{cleanedName}</h3>
+          {isAncileo || source === 'ancileo' ? (
+            <span className="ml-2 px-2 py-1 bg-white/20 text-white text-xs font-semibold rounded-full flex items-center gap-1 flex-shrink-0">
+              <Sparkles className="w-3 h-3" />
+              Ancileo
+            </span>
+          ) : (
+            <span className="ml-2 px-2 py-1 bg-white/20 text-white text-xs font-semibold rounded-full flex-shrink-0">
+              Local
+            </span>
+          )}
         </div>
-        <p className="text-white/90 text-sm font-medium">View full policy details</p>
+        <p className="text-white/90 text-sm font-medium mt-auto">View full policy details</p>
       </div>
     </button>
   )
 }
 
 // Policy Modal Component
-function PolicyModal({ policyName, isOpen, onClose }: { policyName: string; isOpen: boolean; onClose: () => void }) {
+function PolicyModal({ policyName, isOpen, onClose, productCode, offerId, quoteId }: { 
+  policyName: string
+  isOpen: boolean
+  onClose: () => void
+  productCode?: string
+  offerId?: string
+  quoteId?: string
+}) {
   const [details, setDetails] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [isAncileo, setIsAncileo] = useState(false)
+  const cleanedName = cleanPolicyName(policyName)
   
   useEffect(() => {
     if (isOpen && !details) {
       setIsLoading(true)
-      fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002'}/api/policy/details?policy_name=${encodeURIComponent(policyName)}`)
+      
+      // Try Ancileo API - Note: According to Ancileo docs, getPolicy requires policyId (from purchase) and email
+      // For now, if we have offer_id but not policy_id, we'll use local policy details
+      // The policy wordings can only be fetched after purchase
+      setIsAncileo(false)
+      
+      // For purchased policies, we could fetch wordings, but we need policy_id and email
+      // This would need to be called after purchase with the purchasedOfferId
+      // For now, fallback to local policy details
+      fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002'}/api/policy/details?policy_name=${encodeURIComponent(cleanedName)}`)
         .then(res => res.json())
         .then(data => {
           if (data.success) {
             setDetails(data.summary)
+            setIsAncileo(false)
           }
           setIsLoading(false)
         })
         .catch(() => setIsLoading(false))
     }
-  }, [isOpen, policyName, details])
+  }, [isOpen, cleanedName, details, productCode, offerId, quoteId])
   
   if (!isOpen) return null
   
@@ -65,7 +111,20 @@ function PolicyModal({ policyName, isOpen, onClose }: { policyName: string; isOp
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-4 flex items-center justify-between border-b border-gray-700">
-          <h2 className="text-xl font-bold text-white">{policyName}</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-bold text-white">{cleanedName}</h2>
+            {isAncileo && (
+              <span className="px-2 py-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-semibold rounded-full flex items-center gap-1">
+                <Sparkles className="w-3 h-3" />
+                Ancileo API
+              </span>
+            )}
+            {!isAncileo && (
+              <span className="px-2 py-1 bg-gradient-to-r from-blue-600 to-cyan-600 text-white text-xs font-semibold rounded-full">
+                Local
+              </span>
+            )}
+          </div>
           <button
             onClick={onClose}
             className="p-2 hover:bg-white/10 rounded-lg transition-colors"
@@ -101,13 +160,433 @@ function PolicyModal({ policyName, isOpen, onClose }: { policyName: string; isOp
   )
 }
 
-// Enhanced Message Renderer with cards
-function EnhancedMarkdown({ content }: { content: string }) {
-  const [selectedPolicy, setSelectedPolicy] = useState<string | null>(null)
+// Purchase Form Modal - Step by step form for collecting traveler details
+function PurchaseForm({ quote, quoteId, tripDetails, isOpen, onClose, onComplete }: {
+  quote: any
+  quoteId?: string
+  tripDetails?: any
+  isOpen: boolean
+  onClose: () => void
+  onComplete: (insureds: any[], paymentInfo: any) => void
+}) {
+  const [step, setStep] = useState(1)
+  const [travelers, setTravelers] = useState<Array<{ name: string; age: number; email: string; phone: string; dob: string }>>([])
+  const [currentTraveler, setCurrentTraveler] = useState({ name: '', age: 0, email: '', phone: '', dob: '' })
+  const [paymentInfo, setPaymentInfo] = useState({ cardNumber: '', expiryDate: '', cvv: '', cardName: '' })
+
+  useEffect(() => {
+    if (!isOpen) {
+      // Reset form when closed
+      setStep(1)
+      setTravelers([])
+      setCurrentTraveler({ name: '', age: 0, email: '', phone: '', dob: '' })
+      setPaymentInfo({ cardNumber: '', expiryDate: '', cvv: '', cardName: '' })
+      return
+    }
+    
+    if (isOpen && tripDetails) {
+      // Handle different tripDetails structures
+      let initialTravelers: Array<{ name: string; age: number; email: string; phone: string; dob: string }> = []
+      
+      if (Array.isArray(tripDetails.travelers)) {
+        // If travelers is an array, map it
+        initialTravelers = tripDetails.travelers.map((t: any) => ({
+          name: t.name || '',
+          age: t.age || 0,
+          email: t.email || '',
+          phone: t.phone || '',
+          dob: t.dob || t.dateOfBirth || ''
+        }))
+      } else if (tripDetails.travelers && typeof tripDetails.travelers === 'number') {
+        // If travelers is a number, create empty slots
+        const numTravelers = tripDetails.travelers
+        initialTravelers = Array(numTravelers).fill(null).map(() => ({
+          name: '',
+          age: 0,
+          email: '',
+          phone: '',
+          dob: ''
+        }))
+      } else {
+        // Try to get count from adults + children
+        const numAdults = tripDetails.adults || 1
+        const numChildren = tripDetails.children || 0
+        const totalTravelers = numAdults + numChildren
+        initialTravelers = Array(totalTravelers).fill(null).map((_, index) => ({
+          name: '',
+          age: index < numAdults ? 25 : 10, // Default age
+          email: '',
+          phone: '',
+          dob: ''
+        }))
+      }
+      
+      setTravelers(initialTravelers)
+      if (initialTravelers.length > 0) {
+        setCurrentTraveler(initialTravelers[0])
+        setStep(1)
+      } else {
+        // If no travelers, create at least one empty slot
+        const emptyTraveler = { name: '', age: 0, email: '', phone: '', dob: '' }
+        setTravelers([emptyTraveler])
+        setCurrentTraveler(emptyTraveler)
+        setStep(1)
+      }
+    } else if (isOpen && !tripDetails) {
+      // No trip details, create single empty traveler
+      const emptyTraveler = { name: '', age: 0, email: '', phone: '', dob: '' }
+      setTravelers([emptyTraveler])
+      setCurrentTraveler(emptyTraveler)
+      setStep(1)
+    }
+  }, [isOpen, tripDetails])
+
+  const handleAddTraveler = () => {
+    if (currentTraveler.name && currentTraveler.age > 0 && currentTraveler.email && currentTraveler.phone) {
+      const updated = [...travelers]
+      // Update existing traveler if editing, otherwise add new
+      if (step <= travelers.length) {
+        updated[step - 1] = currentTraveler
+      } else {
+        updated.push(currentTraveler)
+      }
+      setTravelers(updated)
+      
+      // Calculate numTravelers for this check
+      const totalTravelers = (() => {
+        if (!tripDetails) return Math.max(travelers.length, 1)
+        if (Array.isArray(tripDetails.travelers)) {
+          return tripDetails.travelers.length
+        }
+        if (typeof tripDetails.travelers === 'number') {
+          return tripDetails.travelers
+        }
+        const numAdults = tripDetails.adults || 1
+        const numChildren = tripDetails.children || 0
+        return numAdults + numChildren
+      })()
+      
+      if (step < totalTravelers) {
+        // Move to next traveler
+        setStep(step + 1)
+        // Load next traveler if exists, otherwise clear
+        if (updated[step]) {
+          setCurrentTraveler(updated[step])
+        } else {
+          setCurrentTraveler({ name: '', age: 0, email: '', phone: '', dob: '' })
+        }
+      } else {
+        // Move to payment step
+        setStep(totalTravelers + 1)
+      }
+    }
+  }
   
-  // Extract policy mentions
+  useEffect(() => {
+    // Pre-fill current traveler data if editing existing
+    if (step <= travelers.length && travelers[step - 1]) {
+      setCurrentTraveler(travelers[step - 1])
+    } else if (step > travelers.length) {
+      // Clear for new traveler
+      setCurrentTraveler({ name: '', age: 0, email: '', phone: '', dob: '' })
+    }
+  }, [step, travelers])
+
+  const handleComplete = () => {
+    if (paymentInfo.cardNumber && paymentInfo.expiryDate && paymentInfo.cvv) {
+      const insureds = travelers.map(t => ({
+        firstName: t.name.split(' ')[0] || t.name,
+        lastName: t.name.split(' ').slice(1).join(' ') || '',
+        dateOfBirth: t.dob || new Date(new Date().setFullYear(new Date().getFullYear() - t.age)).toISOString().split('T')[0],
+        email: t.email,
+        phone: t.phone
+      }))
+      onComplete(insureds, paymentInfo)
+      setStep(1)
+      setTravelers([])
+      setCurrentTraveler({ name: '', age: 0, email: '', phone: '', dob: '' })
+      setPaymentInfo({ cardNumber: '', expiryDate: '', cvv: '', cardName: '' })
+    }
+  }
+
+  if (!isOpen) return null
+
+  const cleanedName = cleanPolicyName(quote.plan_name)
+  
+  // Calculate number of travelers from tripDetails
+  const numTravelers = (() => {
+    if (!tripDetails) return 1
+    if (Array.isArray(tripDetails.travelers)) {
+      return tripDetails.travelers.length
+    }
+    if (typeof tripDetails.travelers === 'number') {
+      return tripDetails.travelers
+    }
+    const numAdults = tripDetails.adults || 1
+    const numChildren = tripDetails.children || 0
+    return numAdults + numChildren
+  })()
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div 
+        className="relative bg-gray-800 rounded-2xl shadow-2xl border border-gray-700 max-w-2xl w-full max-h-[90vh] overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-4 flex items-center justify-between border-b border-gray-700">
+          <div>
+            <h2 className="text-xl font-bold text-white">Purchase: {cleanedName}</h2>
+            <p className="text-sm text-white/80">Step {step} of {numTravelers > travelers.length ? numTravelers + 1 : numTravelers}</p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
+            <X className="w-5 h-5 text-white" />
+          </button>
+        </div>
+
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+          {step <= numTravelers ? (
+            <div>
+              <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                <User className="w-5 h-5 text-blue-400" />
+                Traveler {step} Information
+              </h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-gray-300 text-sm mb-2">Full Name *</label>
+                  <input
+                    type="text"
+                    value={currentTraveler.name}
+                    onChange={(e) => setCurrentTraveler({ ...currentTraveler, name: e.target.value })}
+                    className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+                    placeholder="John Doe"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-300 text-sm mb-2">Age *</label>
+                  <input
+                    type="number"
+                    value={currentTraveler.age || ''}
+                    onChange={(e) => setCurrentTraveler({ ...currentTraveler, age: parseInt(e.target.value) || 0 })}
+                    className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+                    placeholder="30"
+                    min="0"
+                    max="120"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-300 text-sm mb-2">Email *</label>
+                  <input
+                    type="email"
+                    value={currentTraveler.email}
+                    onChange={(e) => setCurrentTraveler({ ...currentTraveler, email: e.target.value })}
+                    className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+                    placeholder="john@example.com"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-300 text-sm mb-2">Phone *</label>
+                  <input
+                    type="tel"
+                    value={currentTraveler.phone}
+                    onChange={(e) => setCurrentTraveler({ ...currentTraveler, phone: e.target.value })}
+                    className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+                    placeholder="+65 9123 4567"
+                  />
+                </div>
+                <button
+                  onClick={handleAddTraveler}
+                  disabled={!currentTraveler.name || !currentTraveler.age || !currentTraveler.email || !currentTraveler.phone}
+                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition-all"
+                >
+                  {step < numTravelers ? 'Next Traveler' : 'Continue to Payment'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-blue-400" />
+                Payment Information
+              </h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-gray-300 text-sm mb-2">Cardholder Name *</label>
+                  <input
+                    type="text"
+                    value={paymentInfo.cardName}
+                    onChange={(e) => setPaymentInfo({ ...paymentInfo, cardName: e.target.value })}
+                    className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+                    placeholder="John Doe"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-300 text-sm mb-2">Card Number *</label>
+                  <input
+                    type="text"
+                    value={paymentInfo.cardNumber}
+                    onChange={(e) => setPaymentInfo({ ...paymentInfo, cardNumber: e.target.value.replace(/\D/g, '').slice(0, 16) })}
+                    className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+                    placeholder="1234 5678 9012 3456"
+                    maxLength={16}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-gray-300 text-sm mb-2">Expiry Date *</label>
+                    <input
+                      type="text"
+                      value={paymentInfo.expiryDate}
+                      onChange={(e) => setPaymentInfo({ ...paymentInfo, expiryDate: e.target.value.replace(/\D/g, '').slice(0, 4).replace(/(\d{2})(\d)/, '$1/$2') })}
+                      className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+                      placeholder="MM/YY"
+                      maxLength={5}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-gray-300 text-sm mb-2">CVV *</label>
+                    <input
+                      type="text"
+                      value={paymentInfo.cvv}
+                      onChange={(e) => setPaymentInfo({ ...paymentInfo, cvv: e.target.value.replace(/\D/g, '').slice(0, 4) })}
+                      className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+                      placeholder="123"
+                      maxLength={4}
+                    />
+                  </div>
+                </div>
+                <div className="pt-4 border-t border-gray-700">
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="text-gray-300">Total Amount:</span>
+                    <span className="text-2xl font-bold text-blue-400">{quote.currency || 'SGD'} {quote.price.toFixed(2)}</span>
+                  </div>
+                  <button
+                    onClick={handleComplete}
+                    disabled={!paymentInfo.cardNumber || !paymentInfo.expiryDate || !paymentInfo.cvv || !paymentInfo.cardName}
+                    className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition-all flex items-center justify-center gap-2"
+                  >
+                    <ShoppingCart className="w-5 h-5" />
+                    Complete Purchase
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Quote Card with Purchase Button
+function QuoteCard({ quote, quoteId, tripDetails, onPurchase }: { 
+  quote: { plan_name: string; price: number; currency: string; recommended_for: string; offer_id?: string; product_code?: string; source?: string }
+  quoteId?: string
+  tripDetails?: any
+  onPurchase: (quote: any, insureds: any[], paymentInfo: any) => void 
+}) {
+  const cleanedName = cleanPolicyName(quote.plan_name)
+  const [showPurchaseForm, setShowPurchaseForm] = useState(false)
+  const isAncileo = quote.source === 'ancileo' || quote.offer_id
+  
+  return (
+    <>
+      <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl p-5 border border-gray-700 hover:border-blue-500/50 transition-all relative">
+        {/* Source Badge */}
+        <div className="absolute top-3 right-3">
+          {isAncileo ? (
+            <span className="px-2 py-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-semibold rounded-full flex items-center gap-1">
+              <Sparkles className="w-3 h-3" />
+              Ancileo
+            </span>
+          ) : (
+            <span className="px-2 py-1 bg-gradient-to-r from-blue-600 to-cyan-600 text-white text-xs font-semibold rounded-full">
+              Local
+            </span>
+          )}
+        </div>
+        
+        <div className="flex items-start justify-between mb-4 pr-16">
+          <div>
+            <h3 className="text-lg font-bold text-white mb-1">{cleanedName}</h3>
+            <p className="text-2xl font-bold text-blue-400">
+              {quote.currency || 'SGD'} {quote.price.toFixed(2)}
+            </p>
+          </div>
+        </div>
+        <p className="text-gray-400 text-sm mb-4">{quote.recommended_for}</p>
+        <button
+          onClick={() => setShowPurchaseForm(true)}
+          disabled={!quote.offer_id && quote.source !== 'ancileo'}
+          className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition-all flex items-center justify-center gap-2"
+        >
+          <ShoppingCart className="w-4 h-4" />
+          Buy Now
+        </button>
+      </div>
+
+      {showPurchaseForm && (
+        <PurchaseForm
+          quote={quote}
+          quoteId={quoteId}
+          tripDetails={tripDetails}
+          isOpen={showPurchaseForm}
+          onClose={() => setShowPurchaseForm(false)}
+          onComplete={(insureds, paymentInfo) => {
+            setShowPurchaseForm(false)
+            onPurchase(quote, insureds, paymentInfo)
+          }}
+        />
+      )}
+    </>
+  )
+}
+
+// Enhanced Message Renderer with cards
+function EnhancedMarkdown({ content, quotes }: { content: string; quotes?: any[] }) {
+  const [selectedPolicy, setSelectedPolicy] = useState<any | null>(null)
+  
+  // Extract policy mentions from text content (local policies) - only if content actually mentions policies
   const policyRegex = /(TravelEasy|Scootsurance|MSIG|Policy:\s*[^\]]+)/gi
-  const policies = Array.from(new Set(content.match(policyRegex)?.map(m => m.replace(/Policy:\s*/i, '').trim()) || []))
+  const textPolicies = Array.from(new Set(
+    (content.match(policyRegex)?.map(m => cleanPolicyName(m.replace(/Policy:\s*/i, '').trim())) || [])
+      .filter(Boolean)
+  )).map(name => ({
+    name,
+    isAncileo: false,
+    source: 'local'
+  }))
+  
+  // Only show policies if there are actual policy mentions OR quotes provided
+  const hasPolicyContent = textPolicies.length > 0 || (quotes && quotes.length > 0)
+  
+  // Extract Ancileo policies from quotes
+  const ancileoPolicies = (quotes || [])
+    .filter(q => q.source === 'ancileo' || q.offer_id)
+    .map(q => ({
+      name: cleanPolicyName(q.plan_name),
+      isAncileo: true,
+      source: 'ancileo',
+      quote: q,
+      productCode: q.product_code,
+      offerId: q.offer_id
+    }))
+  
+  // Combine all policies, removing duplicates (prioritize Ancileo)
+  const allPoliciesMap = new Map<string, any>()
+  
+  // First add text policies
+  textPolicies.forEach(p => {
+    if (!allPoliciesMap.has(p.name.toLowerCase())) {
+      allPoliciesMap.set(p.name.toLowerCase(), p)
+    }
+  })
+  
+  // Then add/override with Ancileo policies
+  ancileoPolicies.forEach(p => {
+    allPoliciesMap.set(p.name.toLowerCase(), p)
+  })
+  
+  const policies = Array.from(allPoliciesMap.values())
   
   return (
     <>
@@ -124,13 +603,28 @@ function EnhancedMarkdown({ content }: { content: string }) {
             
             if (policyMatch) {
               const policyName = policyMatch[1].replace(/Policy:\s*/i, '').trim()
+              
+              // Check if this policy is from Ancileo quotes
+              const ancileoQuote = quotes?.find(q => cleanPolicyName(q.plan_name) === cleanPolicyName(policyName))
+              
               return (
                 <button
-                  onClick={() => setSelectedPolicy(policyName)}
-                  className="text-blue-400 font-semibold bg-blue-900/40 px-2 py-1 rounded-md hover:bg-blue-900/60 transition-all border border-blue-700/40 shadow-sm hover:shadow-md hover:scale-105 inline-flex items-center gap-1"
+                  onClick={() => setSelectedPolicy({
+                    name: policyName,
+                    isAncileo: !!ancileoQuote,
+                    productCode: ancileoQuote?.product_code,
+                    offerId: ancileoQuote?.offer_id,
+                    quoteId: quotes?.[0]?.quote_id || quotes?.find((q: any) => q.quote_id)?.quote_id
+                  })}
+                  className={`font-semibold px-2 py-1 rounded-md transition-all border shadow-sm hover:shadow-md hover:scale-105 inline-flex items-center gap-1 ${
+                    ancileoQuote 
+                      ? 'text-purple-300 bg-purple-900/40 border-purple-700/40 hover:bg-purple-900/60' 
+                      : 'text-blue-400 bg-blue-900/40 border-blue-700/40 hover:bg-blue-900/60'
+                  }`}
                 >
                   {children}
-                  <ExternalLink className="w-3 h-3" />
+                  {ancileoQuote && <Sparkles className="w-3 h-3 text-purple-300" />}
+                  {!ancileoQuote && <ExternalLink className="w-3 h-3" />}
                 </button>
               )
             }
@@ -157,23 +651,22 @@ function EnhancedMarkdown({ content }: { content: string }) {
             </li>
           ),
           h1: ({ children }) => (
-            <h1 className="text-2xl font-bold text-white mb-4 mt-6 bg-gradient-to-r from-blue-300 to-purple-300 bg-clip-text text-transparent">
+            <h1 className="text-3xl font-bold text-white mb-5 mt-8 first:mt-0">
               {children}
             </h1>
           ),
           h2: ({ children }) => (
-            <h2 className="text-xl font-semibold text-white mb-3 mt-5 bg-gradient-to-r from-blue-300 to-indigo-300 bg-clip-text text-transparent">
+            <h2 className="text-2xl font-bold text-white mb-4 mt-7 first:mt-0">
               {children}
             </h2>
           ),
           h3: ({ children }) => (
-            <h3 className="text-lg font-semibold text-gray-200 mb-2 mt-4">{children}</h3>
+            <h3 className="text-xl font-semibold text-gray-100 mb-3 mt-6 first:mt-0">{children}</h3>
           ),
-          hr: () => (
-            <div className="my-6">
-              <hr className="border-gray-700/50" />
-            </div>
+          h4: ({ children }) => (
+            <h4 className="text-lg font-semibold text-gray-200 mb-3 mt-5 first:mt-0">{children}</h4>
           ),
+          hr: () => null, // Remove separators - use font size instead
           code: ({ children }) => (
             <code className="bg-gray-700/50 text-blue-300 px-2 py-1 rounded text-sm font-mono border border-blue-500/20">
               {children}
@@ -189,22 +682,41 @@ function EnhancedMarkdown({ content }: { content: string }) {
         {content}
       </ReactMarkdown>
       
-      {/* Policy Cards Section */}
-      {policies.length > 0 && (
-        <div className="mt-8 pt-6 border-t border-gray-700/50">
+      {/* Policy Cards Section - Including Ancileo Policies - Only show if policies are mentioned */}
+      {hasPolicyContent && policies.length > 0 && (
+        <div className="mt-8 pt-6">
           <div className="mb-5">
             <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-blue-400" />
               Referenced Policies
             </h3>
-            <p className="text-gray-400 text-sm">Click any policy to view detailed information</p>
+            <p className="text-gray-400 text-sm">
+              {ancileoPolicies.length > 0 && (
+                <span className="inline-flex items-center gap-1 text-purple-300">
+                  <Sparkles className="w-3 h-3" />
+                  {ancileoPolicies.length} Ancileo {ancileoPolicies.length === 1 ? 'policy' : 'policies'} available
+                </span>
+              )}
+              {ancileoPolicies.length > 0 && textPolicies.length > 0 && <span className="mx-2">•</span>}
+              {textPolicies.length > 0 && (
+                <span className="text-blue-300">{textPolicies.length} Local {textPolicies.length === 1 ? 'policy' : 'policies'}</span>
+              )}
+            </p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {policies.map((policy, idx) => (
               <PolicyCard
                 key={idx}
-                policyName={policy}
-                onClick={() => setSelectedPolicy(policy)}
+                policyName={typeof policy === 'string' ? policy : policy.name}
+                isAncileo={typeof policy === 'object' ? policy.isAncileo : false}
+                source={typeof policy === 'object' ? policy.source : 'local'}
+                onClick={() => setSelectedPolicy(typeof policy === 'object' ? {
+                  name: policy.name,
+                  isAncileo: policy.isAncileo,
+                  productCode: policy.productCode,
+                  offerId: policy.offerId,
+                  quoteId: quotes?.[0]?.quote_id
+                } : policy)}
               />
             ))}
           </div>
@@ -214,9 +726,12 @@ function EnhancedMarkdown({ content }: { content: string }) {
       {/* Policy Modal */}
       {selectedPolicy && (
         <PolicyModal
-          policyName={selectedPolicy}
+          policyName={typeof selectedPolicy === 'string' ? selectedPolicy : selectedPolicy.name}
           isOpen={!!selectedPolicy}
           onClose={() => setSelectedPolicy(null)}
+          productCode={typeof selectedPolicy === 'object' ? selectedPolicy.productCode : undefined}
+          offerId={typeof selectedPolicy === 'object' ? selectedPolicy.offerId : undefined}
+          quoteId={typeof selectedPolicy === 'object' ? selectedPolicy.quoteId : undefined}
         />
       )}
     </>
@@ -305,8 +820,10 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
-  images?: Array<{ destination: string; keyword: string; url: string }>
   booking_links?: Array<{ type: string; platform: string; url: string; text: string }>
+  quotes?: Array<{ plan_name: string; price: number; currency: string; recommended_for: string; source?: string; offer_id?: string; product_code?: string }>
+  quote_id?: string
+  trip_details?: any
 }
 
 interface ConversationThread {
@@ -379,30 +896,44 @@ export default function Home() {
 
   useEffect(() => {
     scrollToBottom()
-    if (messages.length === 0) {
-      initializeGreeting()
-    }
   }, [messages])
+
+  // Initialize greeting only once on mount
+  useEffect(() => {
+    initializeGreeting()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
   const initializeGreeting = async () => {
+    // Set initial greeting immediately so user sees something
+    if (messages.length === 0) {
+      setMessages([{
+        role: 'assistant',
+        content: "### 👋 Welcome! I'm Wanda, Your Travel Insurance Agent\n\n• Expert travel insurance advice\n• Compare policies instantly\n• Get quotes in seconds\n\nHow can I help protect your trip? ✈️",
+        timestamp: new Date()
+      }])
+    }
+    
+    // Try to fetch personalized greeting from API
     try {
       const response = await fetch(`${API_URL}/api/greeting?user_id=user_${Date.now()}&language=${language}`)
-      const data = await response.json()
+      if (response.ok) {
+        const data = await response.json()
+        if (data.greeting) {
       setMessages([{
         role: 'assistant',
-        content: data.greeting || "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👋 Welcome! I'm Wanda, Your Travel Insurance Agent\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n• Expert travel insurance advice\n• Compare policies instantly\n• Get quotes in seconds\n• Secure payment in chat\n\nHow can I help protect your trip? ✈️",
+            content: data.greeting,
         timestamp: new Date()
       }])
+        }
+      }
     } catch (error) {
-      setMessages([{
-        role: 'assistant',
-        content: "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👋 Welcome! I'm Wanda, Your Travel Insurance Agent\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n• Expert travel insurance advice\n• Compare policies instantly\n• Get quotes in seconds\n\nHow can I help protect your trip? ✈️",
-        timestamp: new Date()
-      }])
+      // Keep the default greeting if API fails
+      console.log('Greeting API not available, using default')
     }
   }
 
@@ -421,6 +952,23 @@ export default function Home() {
     setIsLoading(true)
 
     try {
+      // Get latest quotes and trip details from messages for context
+      const latestQuoteData = messages
+        .filter((m: Message) => m.quotes && m.quotes.length > 0)
+        .slice(-1)[0]
+      
+      const latestTripDetails = messages
+        .filter((m: Message) => m.trip_details)
+        .slice(-1)[0]?.trip_details
+      
+      const contextData: any = {}
+      if (latestQuoteData?.quotes) {
+        contextData.quotes = latestQuoteData.quotes
+        contextData.trip_details = latestQuoteData.trip_details || latestTripDetails
+      } else if (latestTripDetails) {
+        contextData.trip_details = latestTripDetails
+      }
+      
       const response = await fetch(`${API_URL}/api/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -428,7 +976,8 @@ export default function Home() {
           question: currentInput,
           language: language,
           user_id: 'default_user',
-          is_voice: false
+          is_voice: false,
+          context_data: contextData  // Pass quotes and trip details for pricing/best policy questions
         })
       })
 
@@ -438,14 +987,16 @@ export default function Home() {
 
       const data = await response.json()
       
-      const answerText = typeof data === 'string' ? data : (data.answer || data.message || 'I apologize, but I encountered an error.')
+      const answerText = typeof data === 'string' ? data : (data.answer || data.message || data.content || 'I apologize, but I encountered an error.')
       
       const assistantMessage: Message = {
         role: 'assistant',
         content: answerText,
         timestamp: new Date(),
-        images: data.images || [],
-        booking_links: data.booking_links || []
+        booking_links: data.booking_links || [],
+        quotes: data.quotes || [],
+        quote_id: data.quote_id || null,
+        trip_details: data.trip_details || null
       }
 
       setMessages(prev => [...prev, assistantMessage])
@@ -493,6 +1044,7 @@ export default function Home() {
         
         if (extractData.success && extractData.extracted_data) {
           const tripInfo = extractData.extracted_data
+          const claimsData = extractData.claims_analysis
           
           const quoteResponse = await fetch(`${API_URL}/api/quote`, {
             method: 'POST',
@@ -510,10 +1062,34 @@ export default function Home() {
           
           const quoteData = await quoteResponse.json()
           
+          // Build claims insights message
+          let claimsSection = ''
+          if (claimsData && claimsData.has_data && claimsData.recommendations && claimsData.recommendations.length > 0) {
+            const topRec = claimsData.recommendations[0]
+            const topClaimType = topRec.claim_type || 'incidents'
+            const incidenceRate = topRec.incidence_rate || '0%'
+            const avgCost = topRec.average_cost || 0
+            
+            claimsSection = `\n\n### 🎯 Claims Insights for ${tripInfo.destination || 'Your Destination'}\n\nBased on historical claims data:\n\n**${incidenceRate} of travelers** have claimed for **${topClaimType}** incidents with an average cost of **$${avgCost.toFixed(2)} SGD**.\n\nWould you like to purchase insurance to specifically cover this highly likely incident?`
+            
+            // Add other common incidents if available
+            if (claimsData.common_incidents && claimsData.common_incidents.length > 1) {
+              const otherIncidents = claimsData.common_incidents.slice(1, 3).map((inc: any) => 
+                `${inc.incident} (${inc.percentage}%)`
+              ).join(', ')
+              if (otherIncidents) {
+                claimsSection += `\n\nOther common incidents include: ${otherIncidents}.`
+              }
+            }
+          }
+          
           const successMsg: Message = {
             role: 'assistant',
-            content: `✅ **Document Processed Successfully!**\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📄 Trip Details Extracted\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${tripInfo.destination ? `• Destination: ${tripInfo.destination}` : ''}${tripInfo.departure_date ? `\n• Departure: ${tripInfo.departure_date}` : ''}${tripInfo.return_date ? `\n• Return: ${tripInfo.return_date}` : ''}${tripInfo.travelers?.length ? `\n• Travelers: ${tripInfo.travelers.length}` : ''}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💡 Insurance Recommendations\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${quoteData.quotes?.map((q: any, i: number) => `• **${q.plan_name}**: $${q.price.toFixed(2)} - ${q.recommended_for}`).join('\n')}\n\nWhich plan would you like to learn more about?`,
-            timestamp: new Date()
+            content: `✅ **Document Processed Successfully!**\n\n### 📄 Trip Details Extracted\n\n${tripInfo.destination ? `• Destination: ${tripInfo.destination}` : ''}${tripInfo.departure_date ? `\n• Departure: ${tripInfo.departure_date}` : ''}${tripInfo.return_date ? `\n• Return: ${tripInfo.return_date}` : ''}${tripInfo.travelers?.length ? `\n• Travelers: ${tripInfo.travelers.length}` : ''}${claimsSection}\n\n### 💡 Insurance Recommendations\n\n${quoteData.quotes?.map((q: any, i: number) => `• **${q.plan_name}**: $${q.price.toFixed(2)} ${q.currency || 'SGD'} - ${q.recommended_for}`).join('\n')}\n\nWhich plan would you like to learn more about?`,
+            timestamp: new Date(),
+            quotes: quoteData.quotes || [],
+            quote_id: quoteData.quote_id || null,
+            trip_details: quoteData.trip_details || tripInfo
           }
           
           setMessages(prev => [...prev, successMsg])
@@ -587,14 +1163,34 @@ export default function Home() {
       .replace(/[\u{2700}-\u{27BF}]/gu, '')
       .replace(/\*\*(.*?)\*\*/g, '$1')
       .replace(/\*(.*?)\*/g, '$1')
-      .replace(/━+/g, '')
-      .replace(/[•▪▫◦]/g, '-')
+      .replace(/━+/g, ' ')
+      .replace(/[•▪▫◦]/g, '- ')
       .replace(/\n{3,}/g, '\n\n')
       .replace(/\[IMAGE:[^\]]+\]/g, '')
       .replace(/https?:\/\/[^\s]+/g, '')
+      // Remove hashes and symbols from policy names (e.g., "#Policy Name" -> "Policy Name")
+      .replace(/#+\s*/g, '')
+      // Remove common special characters that shouldn't be read
+      .replace(/[#@$%^&*()_+=\[\]{}|\\:";\'<>?,./`~]/g, ' ')
+      // Clean policy names - remove symbols but keep readable text
+      .replace(/\b(TravelEasy|Scootsurance|MSIG)[^\s]*/gi, (match) => {
+        // Clean up policy names - remove trailing symbols
+        return match.replace(/[#@$%^&*()_+=\[\]{}|\\:";\'<>?,./`~-]+$/g, '').trim();
+      })
+      .replace(/\s+/g, ' ')
       .trim();
     
     return cleaned.length > 10 ? cleaned : 'I have a response for you. Please check the chat window.';
+  }
+
+  // Function to clean policy names for display
+  const cleanPolicyName = (name: string): string => {
+    if (!name) return '';
+    return name
+      .replace(/#+/g, '') // Remove hashes
+      .replace(/[#@$%^&*()_+=\[\]{}|\\:";\'<>?,./`~]/g, ' ') // Remove special chars
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   const getBestVoice = (): SpeechSynthesisVoice | null => {
@@ -656,9 +1252,11 @@ export default function Home() {
       let cleanedText = cleanTextForSpeech(text);
       if (cleanedText.length < 3) return;
       
-      // Optionally clean on backend for consistency
+      setIsSpeaking(true);
+      
+      // Use Groq TTS API
       try {
-        const response = await fetch(`${API_URL}/api/tts/clean`, {
+        const response = await fetch(`${API_URL}/api/tts/groq`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: cleanedText })
@@ -666,15 +1264,25 @@ export default function Home() {
         
         if (response.ok) {
           const data = await response.json();
-          if (data.success && data.text) {
-            cleanedText = data.text;
+          if (data.success && data.audio) {
+            // Play audio from base64
+            const audio = new Audio(data.audio);
+            audio.onended = () => setIsSpeaking(false);
+            audio.onerror = () => {
+              console.error('Audio playback error');
+              setIsSpeaking(false);
+              // Fallback to browser TTS
+              useBrowserTTS(cleanedText);
+            };
+            audio.play();
+            return;
           }
         }
       } catch (error) {
-        // Use frontend-cleaned text if backend fails
-        console.log('Backend text cleaning failed, using frontend version');
+        console.log('Groq TTS failed, falling back to browser TTS:', error);
       }
       
+      // Fallback to browser TTS if Groq fails
       useBrowserTTS(cleanedText);
     } catch (error) {
       console.error('TTS error:', error);
@@ -877,11 +1485,135 @@ export default function Home() {
                           <div className="relative prose prose-invert prose-sm max-w-none" style={{ fontFamily: 'Inter, system-ui, -apple-system, sans-serif' }}>
                         <EnhancedMarkdown
                           content={message.content
-                            .replace(/━━━+/g, '\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n')
+                            .replace(/━━━+/g, '\n\n### ') // Convert separator lines to section headers
+                            .replace(/^━+$/gm, '### ') // Convert standalone separator lines
                             .replace(/\*\*(Policy:|TravelEasy|Scootsurance|MSIG[^\*]*)\*\*/gi, '**$1**')
                             .replace(/(Policy:|TravelEasy|Scootsurance|MSIG[^•\n]*)/gi, '**$1**')}
+                          quotes={message.quotes}
                         />
                         </div>
+                      
+                        {/* Insurance Quotes with Purchase Option - ONLY Ancileo */}
+                        {message.quotes && message.quotes.length > 0 && (
+                          <div className="mt-6 pt-6">
+                            <div className="mb-4 flex items-center justify-between">
+                              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                <Sparkles className="w-5 h-5 text-purple-400" />
+                                Available Insurance Plans
+                                <span className="ml-2 px-2 py-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-semibold rounded-full">
+                                  Ancileo Only
+                                </span>
+                              </h3>
+                              <div className="flex items-center gap-3 text-xs">
+                                <span className="flex items-center gap-1 text-gray-400">
+                                  <span className="w-3 h-3 rounded-full bg-gradient-to-r from-purple-600 to-pink-600"></span>
+                                  Ancileo API
+                                </span>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {/* Filter to only show Ancileo policies */}
+                              {message.quotes
+                                .filter((q: any) => q.source === 'ancileo' || q.offer_id)
+                                .map((quote: any, idx: number) => (
+                                <QuoteCard
+                                  key={idx}
+                                  quote={quote}
+                                  quoteId={message.quote_id}
+                                  tripDetails={message.trip_details}
+                                  onPurchase={async (selectedQuote, insureds, paymentInfo) => {
+                                    // Handle purchase through Ancileo
+                                    try {
+                                      // Build insureds array according to Ancileo API format
+                                      const ancileoInsureds = (insureds || message.trip_details?.travelers || []).map((t: any, idx: number) => ({
+                                        id: t.id || `insured_${idx}`,
+                                        title: t.title || (t.gender === 'F' ? 'Ms' : 'Mr'),
+                                        firstName: t.firstName || t.first_name || (t.name ? t.name.split(' ')[0] : ''),
+                                        lastName: t.lastName || t.last_name || (t.name ? t.name.split(' ').slice(1).join(' ') : ''),
+                                        nationality: t.nationality || 'SG',
+                                        dateOfBirth: t.dateOfBirth || t.date_of_birth || new Date(new Date().setFullYear(new Date().getFullYear() - (t.age || 30))).toISOString().split('T')[0],
+                                        passport: t.passport || '',
+                                        cardId: t.cardId || t.card_id || ''
+                                      }))
+                                      
+                                      // Build main contact from first insured or payment info
+                                      const firstInsured = ancileoInsureds[0] || {}
+                                      // Get email and phone from original insured data
+                                      const originalFirstInsured = (insureds || message.trip_details?.travelers || [])[0] || {}
+                                      const mainContact = {
+                                        insuredId: firstInsured.id,
+                                        title: firstInsured.title || 'Mr',
+                                        firstName: firstInsured.firstName || '',
+                                        lastName: firstInsured.lastName || '',
+                                        email: originalFirstInsured.email || paymentInfo?.email || '',
+                                        phoneNumber: originalFirstInsured.phone || originalFirstInsured.phoneNumber || paymentInfo?.phone || ''
+                                      }
+                                      
+                                      // Build payment structure if provided
+                                      const payment = paymentInfo?.cardNumber ? {
+                                        pgwPspId: 'stripe', // Default payment gateway
+                                        pgwMerchantId: 'wandersure',
+                                        pspIdentifier: 'stripe',
+                                        pspTransactionId: paymentInfo.transactionId || `txn_${Date.now()}`,
+                                        merchantReference: `ref_${Date.now()}`,
+                                        paymentMethod: 'credit-card',
+                                        amount: selectedQuote.price,
+                                        currency: selectedQuote.currency || 'SGD',
+                                        status: 'authorised',
+                                        transactionDate: new Date().toISOString(),
+                                        paymentName: paymentInfo.cardName || ''
+                                      } : undefined
+                                      
+                                      const purchaseResponse = await fetch(`${API_URL}/api/ancileo/purchase`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                          quote_id: message.quote_id,
+                                          offer_id: selectedQuote.offer_id,
+                                          product_code: selectedQuote.product_code,
+                                          product_type: 'travel-insurance',
+                                          unit_price: selectedQuote.price,
+                                          currency: selectedQuote.currency || 'SGD',
+                                          quantity: 1,
+                                          insureds: ancileoInsureds,
+                                          main_contact: mainContact,
+                                          payment: payment,
+                                          market: 'SG',
+                                          language_code: 'en'
+                                        })
+                                      })
+                                      
+                                      const purchaseData = await purchaseResponse.json()
+                                      if (purchaseData.success) {
+                                        const sourceLabel = selectedQuote.source === 'ancileo' || selectedQuote.offer_id ? 'Ancileo' : 'Local'
+                                        const purchaseMsg: Message = {
+                                          role: 'assistant',
+                                          content: `✅ **Purchase Successful!**\n\nYour insurance policy has been purchased:\n\n• Policy: ${cleanPolicyName(selectedQuote.plan_name)}\n• Source: ${sourceLabel}\n• Policy Number: ${purchaseData.policy_number || 'Processing...'}\n• Amount: ${selectedQuote.currency || 'SGD'} ${selectedQuote.price.toFixed(2)}\n\nConfirmation email will be sent shortly.`,
+                                          timestamp: new Date()
+                                        }
+                                        setMessages((prev: Message[]) => [...prev, purchaseMsg])
+                                      } else {
+                                        throw new Error(purchaseData.error || 'Purchase failed')
+                                      }
+                                    } catch (error: any) {
+                                      const errorMsg: Message = {
+                                        role: 'assistant',
+                                        content: `⚠️ **Purchase Error**\n\n• ${error.message || 'Unable to process purchase'}\n• Please try again or contact support`,
+                                        timestamp: new Date()
+                                      }
+                                      setMessages((prev: Message[]) => [...prev, errorMsg])
+                                    }
+                                  }}
+                                />
+                              ))}
+                        </div>
+                            {message.quotes.filter((q: any) => q.source === 'ancileo' || q.offer_id).length === 0 && (
+                              <div className="text-center py-8 text-gray-400">
+                                <p>No Ancileo policies available. Trying to fetch from Ancileo API...</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       
                         {/* Booking Links */}
                         {message.booking_links && message.booking_links.length > 0 && (
@@ -903,40 +1635,6 @@ export default function Home() {
                           </div>
                         )}
 
-                        {/* Images - Fixed with proper Unsplash URLs */}
-                        {message.images && message.images.length > 0 && (
-                          <div className="mt-6 grid grid-cols-2 gap-4">
-                            {message.images.map((img, i) => {
-                              // Use Unsplash Source API - more reliable
-                              const searchQuery = `${img.destination} ${img.keyword} travel`.replace(/\s+/g, '-').toLowerCase()
-                              const imageUrl = `https://source.unsplash.com/800x600/?${searchQuery},travel,destination`
-                              
-                              return (
-                                <div key={i} className="relative h-48 rounded-xl overflow-hidden border border-gray-600/50 shadow-lg group/image hover:border-blue-500/50 transition-all hover:scale-[1.02]">
-                                  <img
-                                    src={imageUrl}
-                                    alt={`${img.destination} - ${img.keyword}`}
-                                    className="w-full h-full object-cover transition-transform duration-300 group-hover/image:scale-110"
-                                    loading="lazy"
-                                    onError={(e) => {
-                                      // Fallback to a working travel image
-                                      const target = e.target as HTMLImageElement
-                                      target.src = `https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800&h=600&fit=crop&q=80`
-                                      target.onerror = () => {
-                                        target.src = `https://via.placeholder.com/800x600/1f2937/60a5fa?text=${encodeURIComponent(img.destination)}`
-                                      }
-                                    }}
-                                  />
-                                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent"></div>
-                                  <div className="absolute bottom-0 left-0 right-0 p-4">
-                                    <p className="text-white text-sm font-semibold drop-shadow-lg">{img.destination}</p>
-                                    <p className="text-gray-300 text-xs mt-1">{img.keyword}</p>
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
                       </div>
                     </div>
                   </div>
