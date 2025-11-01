@@ -28,11 +28,13 @@ class PolicyScorer:
         quotes: List[Dict],
         trip_details: Dict,
         user_profile: Dict = None,
-        risk_assessment: Dict = None
+        risk_assessment: Dict = None,
+        activities: List[str] = None
     ) -> List[Dict]:
         """
         Score each policy and rank them with explainable reasons
         Returns sorted list with scores and detailed explanations
+        activities: List of activities (e.g., ["skiing", "scuba"]) for activity-based scoring
         """
         scored_policies = []
         
@@ -49,9 +51,9 @@ class PolicyScorer:
             price_score, price_reason = self._score_price_value(quote, quotes, trip_details)
             score["scores"]["price_value"] = price_score
             
-            # 2. Coverage Adequacy Score (0-100)
+            # 2. Coverage Adequacy Score (0-100) - Enhanced with activity matching
             coverage_score, coverage_reason = self._score_coverage_adequacy(
-                quote, trip_details, risk_assessment
+                quote, trip_details, risk_assessment, activities
             )
             score["scores"]["coverage_adequacy"] = coverage_score
             

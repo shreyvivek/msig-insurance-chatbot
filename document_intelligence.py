@@ -221,6 +221,69 @@ Extract all available information. Use null only for fields completely absent.""
             result["missing_critical_fields"] = missing_critical
             result["ready_for_quote"] = not missing_critical
             
+            # ENHANCEMENT 1: Destination-first analysis with claims data
+            destination = extracted.get("destination")
+            if destination:
+                try:
+                    from claims_database import ClaimsDatabase
+                    from claims_analyzer import ClaimsAnalyzer
+                    
+                    claims_db = ClaimsDatabase()
+                    claims_analyzer = ClaimsAnalyzer()
+                    
+                    # Analyze destination for adventurous activities and claims patterns
+                    risk_analysis = claims_db.analyze_destination_risks(destination)
+                    claims_analysis = await claims_analyzer.analyze_destination_and_recommend(destination)
+                    
+                    # Detect adventurous activities based on destination
+                    adventure_keywords = {
+                        "skiing": ["ski", "snow", "mountain", "slope", "alpine"],
+                        "scuba": ["dive", "underwater", "coral", "reef"],
+                        "hiking": ["trek", "trail", "mountain", "hike", "climb"],
+                        "adventure": ["bungee", "paragliding", "rafting", "zip", "adventure"]
+                    }
+                    
+                    destination_lower = destination.lower()
+                    detected_activities = []
+                    for activity, keywords in adventure_keywords.items():
+                        if any(kw in destination_lower for kw in keywords):
+                            detected_activities.append(activity)
+                    
+                    # Suggest insurance enhancements based on activities and claims
+                    insurance_suggestions = []
+                    
+                    # Medical coverage suggestions based on claims
+                    if risk_analysis.get("claim_types", {}).get("Medical"):
+                        medical_pct = risk_analysis["claim_types"]["Medical"]["percentage"]
+                        medical_avg = risk_analysis["claim_types"]["Medical"]["avg_amount"]
+                        if medical_pct > 40:  # High medical claim rate
+                            insurance_suggestions.append({
+                                "type": "medical_coverage",
+                                "reason": f"{medical_pct}% of travelers have medical claims (avg ${medical_avg:,.2f} SGD)",
+                                "recommendation": "Consider higher medical coverage limits",
+                                "priority": "high"
+                            })
+                    
+                    # Adventure activity suggestions
+                    if detected_activities:
+                        insurance_suggestions.append({
+                            "type": "adventure_coverage",
+                            "activities": detected_activities,
+                            "reason": f"Destination likely involves {', '.join(detected_activities)}",
+                            "recommendation": "Ensure policy covers adventure activities",
+                            "priority": "high"
+                        })
+                    
+                    result["claims_analysis"] = claims_analysis
+                    result["risk_analysis"] = risk_analysis
+                    result["detected_activities"] = detected_activities
+                    result["insurance_suggestions"] = insurance_suggestions
+                    
+                    logger.info(f"✅ Destination-first analysis completed for {destination}")
+                    
+                except Exception as e:
+                    logger.error(f"Destination analysis failed: {e}", exc_info=True)
+            
             if missing_critical:
                 result["message"] = "I need a bit more information before I can suggest insurance options. Please provide the missing details."
             

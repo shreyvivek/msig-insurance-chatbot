@@ -19,8 +19,10 @@ class VoiceHandler:
         self.client = Groq(api_key=os.getenv("GROQ_API_KEY", ""))
         self.supported_languages = {
             "en": "English",
-            "ja": "Japanese",
+            "ta": "Tamil",  # Added Tamil
             "zh": "Chinese",
+            "ms": "Malay",  # Added Malay
+            "ja": "Japanese",
             "ko": "Korean",
             "es": "Spanish",
             "fr": "French",
@@ -107,8 +109,10 @@ class VoiceHandler:
         """Generate SSML for advanced TTS"""
         voice_lang_map = {
             "en": "en-US",
-            "ja": "ja-JP",
+            "ta": "ta-IN",  # Tamil
             "zh": "zh-CN",
+            "ms": "ms-MY",  # Malay
+            "ja": "ja-JP",
             "ko": "ko-KR",
             "es": "es-ES",
             "fr": "fr-FR"

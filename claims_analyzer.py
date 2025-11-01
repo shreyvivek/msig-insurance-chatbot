@@ -21,19 +21,66 @@ class ClaimsAnalyzer:
     async def analyze_destination_and_recommend(
         self,
         destination: str,
-        trip_duration: int = None
+        trip_duration: int = None,
+        activities: List[str] = None
     ) -> Dict:
         """
         Analyze destination claims and provide specific policy recommendations
-        with exact policy wordings that cover common incidents
+        with exact policy wordings that cover common incidents.
+        ENHANCED: Focus on destination FIRST, then activities, then suggest insurance enhancements.
         """
-        # Get claims analysis
+        # STEP 1: Destination-first analysis - Get all claims data for destination
+        risk_analysis = self.claims_db.analyze_destination_risks(destination)
+        has_claims_data = risk_analysis.get("total_claims", 0) > 0
+        
+        # STEP 2: Detect adventurous activities based on destination patterns
+        adventure_activities = []
+        destination_lower = destination.lower()
+        
+        # Map destinations to typical activities
+        destination_activity_map = {
+            "japan": ["skiing", "hiking", "temple_visits"],
+            "thailand": ["scuba", "snorkeling", "island_hopping"],
+            "switzerland": ["skiing", "hiking", "mountaineering"],
+            "australia": ["scuba", "surfing", "outback_adventure"],
+            "nepal": ["hiking", "trekking", "mountaineering"],
+            "new zealand": ["adventure", "bungee", "skydiving"],
+            "bali": ["scuba", "surfing", "volcano_trekking"],
+            "iceland": ["hiking", "glacier_tours", "northern_lights"],
+        }
+        
+        for country, typical_activities in destination_activity_map.items():
+            if country in destination_lower:
+                adventure_activities.extend(typical_activities)
+        
+        # Add user-specified activities
+        if activities:
+            adventure_activities.extend([a.lower() for a in activities])
+        
+        # STEP 3: Analyze medical coverage needs based on claims and activities
+        medical_coverage_suggestions = []
+        
+        if risk_analysis.get("claim_types", {}).get("Medical"):
+            medical_data = risk_analysis["claim_types"]["Medical"]
+            medical_pct = medical_data.get("percentage", 0)
+            medical_avg = medical_data.get("avg_amount", 0)
+            
+            # High medical claim rate suggests need for higher medical coverage
+            if medical_pct > 40 or medical_avg > 50000:
+                recommended_medical = max(medical_avg * 3, 100000)  # 3x average + minimum 100k
+                medical_coverage_suggestions.append({
+                    "recommended_coverage": recommended_medical,
+                    "current_average": medical_avg,
+                    "claim_rate": f"{medical_pct}%",
+                    "reason": f"{medical_pct}% of travelers have medical claims averaging ${medical_avg:,.2f} SGD. Higher medical coverage recommended."
+                })
+        
+        # STEP 4: Get coverage recommendations
         coverage_recs = self.claims_db.get_coverage_recommendations(destination, trip_duration)
         
-        logger.info(f"Claims analysis for {destination}: total_claims={coverage_recs.get('total_claims_analyzed', 0)}, recommendations={len(coverage_recs.get('recommendations', []))}")
+        logger.info(f"Claims analysis for {destination}: total_claims={risk_analysis.get('total_claims', 0)}, recommendations={len(coverage_recs.get('recommendations', []))}")
         
         # Check if we have claims data (even if no recommendations yet)
-        risk_analysis = self.claims_db.analyze_destination_risks(destination)
         has_claims_data = risk_analysis.get("total_claims", 0) > 0
         
         if not has_claims_data and not coverage_recs.get("recommendations"):
@@ -89,6 +136,22 @@ class ClaimsAnalyzer:
         # Ensure we always return has_data=True if we have any claims
         has_data = risk_analysis.get("total_claims", 0) > 0
         
+        # STEP 5: Add insurance enhancement suggestions
+        insurance_enhancements = []
+        
+        # Add medical coverage suggestions
+        insurance_enhancements.extend(medical_coverage_suggestions)
+        
+        # Add adventure activity suggestions
+        if adventure_activities:
+            insurance_enhancements.append({
+                "type": "adventure_activity_coverage",
+                "activities": list(set(adventure_activities)),  # Remove duplicates
+                "reason": f"Destination {destination} typically involves {', '.join(set(adventure_activities)[:3])} activities",
+                "recommendation": "Ensure policy explicitly covers adventure activities like skiing, scuba diving, etc.",
+                "priority": "high"
+            })
+        
         result = {
             "destination": destination,
             "has_data": has_data,
@@ -96,10 +159,15 @@ class ClaimsAnalyzer:
             "common_incidents": risk_analysis.get("common_incidents", []),
             "risk_summary": risk_analysis.get("insights", ""),
             "recommendations": detailed_recommendations,
+            "detected_adventure_activities": list(set(adventure_activities)),
+            "insurance_enhancements": insurance_enhancements,
+            "medical_coverage_suggestions": medical_coverage_suggestions,
             "suggested_message": self._generate_suggested_message(
                 destination,
                 coverage_recs if detailed_recommendations else {"recommendations": [], "common_incidents": risk_analysis.get("common_incidents", [])},
-                detailed_recommendations
+                detailed_recommendations,
+                adventure_activities,
+                medical_coverage_suggestions
             )
         }
         
@@ -202,36 +270,58 @@ class ClaimsAnalyzer:
         self,
         destination: str,
         coverage_recs: Dict,
-        detailed_recommendations: List[Dict]
+        detailed_recommendations: List[Dict],
+        adventure_activities: List[str] = None,
+        medical_suggestions: List[Dict] = None
     ) -> str:
         """Generate suggested conversational message for user"""
-        if not detailed_recommendations:
-            return f"Based on historical claims data, I recommend comprehensive travel insurance for {destination}."
+        message_parts = []
         
-        message_parts = [f"Based on historical claims data for {destination}:"]
+        # Start with destination-first focus
+        message_parts.append(f"Based on historical claims data for **{destination}**:")
         
-        # Highlight top recommendation
-        top_rec = detailed_recommendations[0]
-        percentage = top_rec["incidence_rate"]
-        incident = top_rec["claim_type"]
-        avg_cost = top_rec["average_cost"]
+        if detailed_recommendations:
+            # Highlight top recommendation
+            top_rec = detailed_recommendations[0]
+            percentage = top_rec["incidence_rate"]
+            incident = top_rec["claim_type"]
+            avg_cost = top_rec["average_cost"]
+            
+            message_parts.append(
+                f"\n\n🎯 **{percentage}** of travelers have claimed for **{incident}** incidents "
+                f"with an average cost of **${avg_cost:,.2f} SGD**."
+            )
+            
+            message_parts.append(
+                f"\n\nWould you like me to show you insurance policies that specifically cover {incident}?"
+            )
+            
+            # Mention other common incidents
+            if len(detailed_recommendations) > 1:
+                other_incidents = [r["claim_type"] for r in detailed_recommendations[1:3]]
+                if other_incidents:
+                    message_parts.append(
+                        f"\n\nOther common incidents in {destination} include: {', '.join(other_incidents)}."
+                    )
         
-        message_parts.append(
-            f"{percentage}% of travelers have claimed for **{incident}** incidents "
-            f"with an average cost of **${avg_cost:,.2f} SGD**."
-        )
+        # Add adventure activity suggestions
+        if adventure_activities:
+            unique_activities = list(set(adventure_activities))[:3]
+            message_parts.append(
+                f"\n\n⚠️ **Adventure Activity Alert**: {destination} typically involves activities like {', '.join(unique_activities)}. "
+                f"You may need additional medical coverage for adventurous activities. Would you like to compare policies that cover these activities?"
+            )
         
-        message_parts.append(
-            f"Would you like me to show you insurance policies that specifically cover {incident}?"
-        )
-        
-        # Mention other common incidents
-        if len(detailed_recommendations) > 1:
-            other_incidents = [r["claim_type"] for r in detailed_recommendations[1:3]]
-            if other_incidents:
+        # Add medical coverage suggestions
+        if medical_suggestions:
+            for suggestion in medical_suggestions[:2]:  # Top 2 suggestions
                 message_parts.append(
-                    f"Other common incidents in {destination} include: {', '.join(other_incidents)}."
+                    f"\n\n💊 **Medical Coverage Recommendation**: {suggestion.get('reason', '')} "
+                    f"Consider policies with at least **${suggestion.get('recommended_coverage', 0):,.0f} SGD** in medical coverage."
                 )
+        
+        if not message_parts:
+            return f"Based on historical claims data, I recommend comprehensive travel insurance for {destination}."
         
         return " ".join(message_parts)
 

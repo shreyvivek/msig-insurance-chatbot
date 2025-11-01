@@ -16,6 +16,9 @@ psycopg2-binary>=2.9.9  # PostgreSQL adapter for claims database
 # Payment Processing
 stripe>=11.0.0
 
+# MCP Integrations (optional - fallback to direct APIs)
+httpx>=0.27.0  # For MCP HTTP requests (already included above)
+
 # Data Processing
 pandas>=2.2.0
 numpy>=1.26.0
@@ -32,4 +35,24 @@ langdetect>=1.0.9
 # Additional utilities
 Pillow>=10.4.0
 openpyxl>=3.1.0
+
+# MongoDB
+pymongo>=4.6.0
+
+# Web Scraping (Instagram)
+instaloader>=4.10.0
+beautifulsoup4>=4.12.0
+
+# Image Analysis (for Instagram posts)
+torch>=2.0.0  # For image classification models
+torchvision>=0.15.0
+transformers>=4.30.0  # For vision models (optional, can use simpler approach)
+
+# Data Models
+pydantic>=2.5.0
+python-multipart>=0.0.6
+
+# PDF Processing (enhancement)
+camelot-py[cv]>=0.11.0
+tabula-py>=2.5.1
 

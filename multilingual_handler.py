@@ -18,8 +18,10 @@ class MultilingualHandler:
         
         self.supported_languages = {
             "en": {"name": "English", "emoji": "🇬🇧", "native_name": "English"},
-            "ja": {"name": "Japanese", "emoji": "🇯🇵", "native_name": "日本語"},
+            "ta": {"name": "Tamil", "emoji": "🇮🇳", "native_name": "தமிழ்"},  # Added Tamil
             "zh": {"name": "Chinese", "emoji": "🇨🇳", "native_name": "中文"},
+            "ms": {"name": "Malay", "emoji": "🇲🇾", "native_name": "Bahasa Melayu"},  # Added Malay
+            "ja": {"name": "Japanese", "emoji": "🇯🇵", "native_name": "日本語"},
             "ko": {"name": "Korean", "emoji": "🇰🇷", "native_name": "한국어"},
             "es": {"name": "Spanish", "emoji": "🇪🇸", "native_name": "Español"},
             "fr": {"name": "French", "emoji": "🇫🇷", "native_name": "Français"},

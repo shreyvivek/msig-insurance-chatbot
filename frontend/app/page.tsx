@@ -1,8 +1,9 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react'
-import { Send, Mic, Volume2, Sparkles, Plane, Upload, X, History, ChevronLeft, ExternalLink, ShoppingCart, User, CreditCard, Mail, Phone, Calendar } from 'lucide-react'
+import { Send, Mic, Volume2, Sparkles, Plane, Upload, X, History, ChevronLeft, ExternalLink, ShoppingCart, User, CreditCard, Mail, Phone, Calendar, Globe, MessageSquarePlus, Instagram } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
+import ProfileConnect from '../components/ProfileConnect'
 
 // Function to clean policy names for display
 function cleanPolicyName(name: string): string {
@@ -847,10 +848,24 @@ export default function Home() {
   const [showHistory, setShowHistory] = useState(true)
   const [conversationThreads, setConversationThreads] = useState<ConversationThread[]>([])
   const [currentThreadId, setCurrentThreadId] = useState<string>('default')
+  const [showLanguageMenu, setShowLanguageMenu] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
+  const [userEmail, setUserEmail] = useState('')
+  const [instagramUsername, setInstagramUsername] = useState('')
+  const [userProfile, setUserProfile] = useState<any>(null)
+  const [policyTier, setPolicyTier] = useState<'free' | 'medium' | 'premium'>('free')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const recognitionRef = useRef<any>(null)
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002'
+  
+  // Language options
+  const languages = [
+    { code: 'en', name: 'English', native: 'English', emoji: '🇬🇧' },
+    { code: 'ta', name: 'Tamil', native: 'தமிழ்', emoji: '🇮🇳' },
+    { code: 'zh', name: 'Chinese', native: '中文', emoji: '🇨🇳' },
+    { code: 'ms', name: 'Malay', native: 'Bahasa Melayu', emoji: '🇲🇾' }
+  ]
 
   // Load chat history from localStorage
   useEffect(() => {
@@ -903,9 +918,121 @@ export default function Home() {
     initializeGreeting()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  
+  // Check if onboarding is needed (first visit)
+  useEffect(() => {
+    const hasOnboarded = localStorage.getItem('wandersure_onboarded')
+    const savedEmail = localStorage.getItem('wandersure_email')
+    const savedInstagram = localStorage.getItem('wandersure_instagram')
+    
+    if (hasOnboarded && savedEmail) {
+      setUserEmail(savedEmail)
+      if (savedInstagram) setInstagramUsername(savedInstagram)
+      setShowOnboarding(false)
+    } else if (!hasOnboarded) {
+      setShowOnboarding(true)
+    }
+  }, [])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
+  
+  // Handle profile connection from ProfileConnect component
+  const handleProfileConnected = (profileData: any) => {
+    const profile = profileData.profile_data || profileData
+    setUserProfile(profile)
+    setPolicyTier(profile.policy_tier || 'free')
+    setUserEmail(profile.email || '')
+    setInstagramUsername(profile.instagram_username || '')
+    setShowOnboarding(false)
+    
+    localStorage.setItem('wandersure_onboarded', 'true')
+    if (profile.email) localStorage.setItem('wandersure_email', profile.email)
+    if (profile.instagram_username) localStorage.setItem('wandersure_instagram', profile.instagram_username)
+    
+    // Show welcome message with tier
+    const name = profile.name || profile.instagram_username || 'Traveler'
+    const activities = profile.likely_activities || []
+    const adventurousScore = profile.adventurous_score || 0
+    
+    const welcomeMsg: Message = {
+      role: 'assistant',
+      content: `🎉 **Welcome, ${name}!**\n\n✅ Your profile has been analyzed\n📊 Policy tier: **${(profile.policy_tier || 'free').toUpperCase()}**\n${adventurousScore > 0 ? `\n🏔️ Adventure score: ${(adventurousScore * 100).toFixed(0)}%\n${activities.length > 0 ? `🎯 Detected interests: ${activities.slice(0, 5).join(', ')}` : ''}` : ''}\n\nReady to find the perfect travel insurance? Upload your itinerary or tell me about your trip!`,
+      timestamp: new Date()
+    }
+    setMessages([welcomeMsg])
+  }
+  
+  const handleSkipOnboarding = () => {
+    setShowOnboarding(false)
+    localStorage.setItem('wandersure_onboarded', 'true')
+    
+    const welcomeMsg: Message = {
+      role: 'assistant',
+      content: `🎉 **Welcome to WanderSure!**\n\nI'm here to help you find the perfect travel insurance. Upload your itinerary or tell me about your trip!`,
+      timestamp: new Date()
+    }
+    setMessages([welcomeMsg])
+  }
+  
+  // Create new chat
+  const createNewChat = () => {
+    // Save current chat to history
+    if (messages.length > 0) {
+      const title = messages[0].content.substring(0, 50).replace(/[#*━]/g, '').trim() || 'Chat'
+      const newThread: ConversationThread = {
+        id: `thread_${Date.now()}`,
+        title: title,
+        lastMessage: messages[messages.length - 1].content.substring(0, 80),
+        timestamp: new Date(),
+        role: 'travel_agent',
+        messageCount: messages.length
+      }
+      
+      setConversationThreads(prev => [newThread, ...prev])
+      
+      // Save to localStorage
+      const threads = JSON.parse(localStorage.getItem('wandersure_conversation_threads') || '[]')
+      threads.unshift({
+        ...newThread,
+        messages: messages.map(m => ({ ...m, timestamp: m.timestamp.toISOString() }))
+      })
+      localStorage.setItem('wandersure_conversation_threads', JSON.stringify(threads))
+    }
+    
+    // Reset for new chat
+    setMessages([])
+    setCurrentThreadId(`thread_${Date.now()}`)
+    initializeGreeting()
+  }
+  
+  // Change language and translate current messages
+  const handleLanguageChange = async (newLang: string) => {
+    setLanguage(newLang)
+    setShowLanguageMenu(false)
+    
+    // Update voice recognition language
+    if (recognitionRef.current) {
+      const langMap: { [key: string]: string } = {
+        'en': 'en-US',
+        'ta': 'ta-IN',
+        'zh': 'zh-CN',
+        'ms': 'ms-MY'
+      }
+      recognitionRef.current.lang = langMap[newLang] || newLang
+    }
+    
+    // Translate current messages if needed
+    if (messages.length > 0 && newLang !== 'en') {
+      try {
+        // Translate recent messages (optional - can be expensive)
+        // For now, just update language for future messages
+        console.log(`Language changed to ${newLang}`)
+      } catch (error) {
+        console.error('Translation error:', error)
+      }
+    }
   }
 
   const initializeGreeting = async () => {
@@ -975,9 +1102,14 @@ export default function Home() {
         body: JSON.stringify({
           question: currentInput,
           language: language,
-          user_id: 'default_user',
+          user_id: userProfile?.email || 'default_user',
+          email: userProfile?.email || userEmail || undefined,
           is_voice: false,
-          context_data: contextData  // Pass quotes and trip details for pricing/best policy questions
+          context_data: {
+            ...contextData,
+            user_profile: userProfile,  // Pass user profile for personalized responses
+            policy_tier: policyTier
+          }
         })
       })
 
@@ -989,9 +1121,20 @@ export default function Home() {
       
       const answerText = typeof data === 'string' ? data : (data.answer || data.message || data.content || 'I apologize, but I encountered an error.')
       
+      // Add claims data to message if available
+      let finalContent = answerText
+      if (data.claims_analysis && data.claims_analysis.has_data) {
+        const claims = data.claims_analysis
+        if (claims.recommendations && claims.recommendations.length > 0) {
+          const top = claims.recommendations[0]
+          const claimsSection = `\n\n### 🎯 Claims Insights for ${claims.destination || 'Your Destination'}\n\n**${top.incidence_rate || 'N/A'}** of travelers have claimed for **${top.claim_type || 'incidents'}** with an average cost of **$${top.average_cost?.toFixed(2) || '0.00'} SGD**.\n\nWould you like to purchase insurance to specifically cover this highly likely incident?`
+          finalContent = claimsSection + '\n\n' + answerText
+        }
+      }
+      
       const assistantMessage: Message = {
         role: 'assistant',
-        content: answerText,
+        content: finalContent,
         timestamp: new Date(),
         booking_links: data.booking_links || [],
         quotes: data.quotes || [],
@@ -1120,7 +1263,15 @@ export default function Home() {
       
       recognition.continuous = false
       recognition.interimResults = false
-      recognition.lang = language === 'en' ? 'en-US' : language
+      
+      // Language mapping for speech recognition
+      const langMap: { [key: string]: string } = {
+        'en': 'en-US',
+        'ta': 'ta-IN',  // Tamil
+        'zh': 'zh-CN',  // Chinese
+        'ms': 'ms-MY'   // Malay
+      }
+      recognition.lang = langMap[language] || language || 'en-US'
 
       recognition.onstart = () => setIsListening(true)
       recognition.onresult = (event: any) => {
@@ -1302,13 +1453,30 @@ export default function Home() {
     const speak = () => {
       const utterance = new SpeechSynthesisUtterance(text);
       
-      // Get the best available voice
-      const voice = getBestVoice();
-      if (voice) {
-        utterance.voice = voice;
-        utterance.lang = voice.lang;
+      // Get the best available voice based on selected language
+      const voices = window.speechSynthesis.getVoices();
+      const langMap: { [key: string]: string } = {
+        'en': 'en-US',
+        'ta': 'ta-IN',  // Tamil
+        'zh': 'zh-CN',  // Chinese
+        'ms': 'ms-MY'   // Malay
+      }
+      const targetLang = langMap[language] || language || 'en-US'
+      
+      // Try to find a voice matching the selected language
+      const matchingVoice = voices.find(v => v.lang.startsWith(targetLang.split('-')[0]))
+      if (matchingVoice) {
+        utterance.voice = matchingVoice;
+        utterance.lang = matchingVoice.lang;
       } else {
-        utterance.lang = language === 'en' ? 'en-US' : language;
+        // Fallback to best available voice
+        const voice = getBestVoice();
+        if (voice) {
+          utterance.voice = voice;
+          utterance.lang = voice.lang;
+        } else {
+          utterance.lang = targetLang;
+        }
       }
       
       // Optimized settings for natural speech
@@ -1449,6 +1617,13 @@ export default function Home() {
                       <History className="w-5 h-5 text-gray-400" />
                     </button>
                   )}
+                  <button
+                    onClick={createNewChat}
+                    className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+                    title="New Chat"
+                  >
+                    <MessageSquarePlus className="w-5 h-5 text-gray-400" />
+                  </button>
                   <div className="bg-gradient-to-br from-blue-600 to-indigo-600 p-2.5 rounded-lg shadow-md">
                     <Plane className="w-5 h-5 text-white animate-bounce" style={{ animationDuration: '2s' }} />
                   </div>
@@ -1457,9 +1632,59 @@ export default function Home() {
                     <p className="text-xs text-gray-400">Wanda • Travel Insurance Agent</p>
                   </div>
                 </div>
+                <div className="flex items-center gap-2">
+                  {/* Language Switcher */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowLanguageMenu(!showLanguageMenu)}
+                      className="flex items-center gap-2 px-3 py-2 bg-gray-700/50 hover:bg-gray-700 rounded-lg transition-colors"
+                      title="Change Language"
+                    >
+                      <Globe className="w-4 h-4 text-gray-300" />
+                      <span className="text-sm text-gray-300">
+                        {languages.find(l => l.code === language)?.emoji} {languages.find(l => l.code === language)?.native}
+                      </span>
+                    </button>
+                    {showLanguageMenu && (
+                      <>
+                        <div 
+                          className="fixed inset-0 z-40" 
+                          onClick={() => setShowLanguageMenu(false)}
+                        ></div>
+                        <div className="absolute right-0 mt-2 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50">
+                          {languages.map((lang) => (
+                            <button
+                              key={lang.code}
+                              onClick={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                handleLanguageChange(lang.code)
+                              }}
+                              className={`w-full text-left px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-2 ${
+                                language === lang.code ? 'bg-gray-700' : ''
+                              }`}
+                            >
+                              <span>{lang.emoji}</span>
+                              <span className="text-sm text-gray-200">{lang.name}</span>
+                              <span className="text-xs text-gray-500 ml-auto">{lang.native}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           </header>
+          
+          {/* Onboarding Modal - Now using ProfileConnect component */}
+          {showOnboarding && (
+            <ProfileConnect
+              onConnected={handleProfileConnected}
+              onSkip={handleSkipOnboarding}
+            />
+          )}
 
           {/* Messages - Dark Mode */}
           <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-6 scrollbar-thin" style={{ minHeight: 0 }}>

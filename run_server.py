@@ -81,6 +81,10 @@ from intelligent_recommender import IntelligentRecommender
 from pricing_calculator import PricingCalculator
 from policy_scorer import PolicyScorer
 from claims_analyzer import ClaimsAnalyzer
+from mcp_integrations import MCPIntegrations
+from activity_policy_matcher import ActivityPolicyMatcher
+from policy_simplifier import PolicySimplifier
+from routers.v1 import router as v1_router
 
 policy_intel = PolicyIntelligence()
 doc_intel = DocumentIntelligence()
@@ -93,6 +97,9 @@ intelligent_recommender = IntelligentRecommender()
 pricing_calculator = PricingCalculator()
 policy_scorer = PolicyScorer()
 claims_analyzer = ClaimsAnalyzer()
+mcp_integrations = MCPIntegrations()
+activity_matcher = ActivityPolicyMatcher()
+policy_simplifier = PolicySimplifier()
 
 def inject_additional_products(ancileo_quotes: List[Dict], trip_details: Dict) -> List[Dict]:
     """
@@ -163,6 +170,9 @@ def inject_additional_products(ancileo_quotes: List[Dict], trip_details: Dict) -
     logger.info(f"Injected {len(mock_products)} additional products. Total quotes: {len(all_quotes)}")
     
     return all_quotes
+
+# Include v1 router
+app.include_router(v1_router)
 
 @app.get("/health")
 async def health():
@@ -452,11 +462,20 @@ CRITICAL INSTRUCTION:
                 pass
         
         # Score policies
+        # Get activities from trip details or user profile
+        activities = []
+        if trip_details.get("activities"):
+            activities = trip_details["activities"]
+        elif user_profile and user_profile.get("activity_types"):
+            activities = user_profile["activity_types"]
+        
+        # Score policies using PolicyScorer (enhanced with activity matching)
         scored = policy_scorer.score_policies(
             quotes=quotes,
             trip_details=trip_details,
             user_profile=user_profile,
-            risk_assessment=risk_assessment
+            risk_assessment=risk_assessment,
+            activities=activities
         )
         
         # Build explanation with scoring details
@@ -494,11 +513,25 @@ CRITICAL INSTRUCTION:
         role=request.get("role")
     )
     
-    # Add claims analysis if available
+    # Add claims analysis if available - CRITICAL for frontend
     if claims_analysis:
         if not result:
             result = {}
         result["claims_analysis"] = claims_analysis
+        logger.info(f"✅ Added claims_analysis to response: has_data={claims_analysis.get('has_data')}, total_claims={claims_analysis.get('total_claims', 0)}")
+    
+    # Also add it to answer/content so LLM response includes it
+    if claims_analysis and claims_analysis.get("has_data"):
+        claims_summary = f"\n\n🎯 **Claims Insights for {destination_mentioned}**: "
+        if claims_analysis.get("recommendations"):
+            top = claims_analysis["recommendations"][0]
+            claims_summary += f"{top.get('incidence_rate', 'N/A')} of travelers have claimed for {top.get('claim_type', 'incidents')} (avg cost: ${top.get('average_cost', 0):,.2f} SGD)"
+        if result.get("answer"):
+            result["answer"] = claims_summary + "\n\n" + result["answer"]
+        if result.get("content"):
+            result["content"] = claims_summary + "\n\n" + result["content"]
+        if result.get("message"):
+            result["message"] = claims_summary + "\n\n" + result["message"]
     
     return result
 
@@ -614,6 +647,7 @@ Format:
 Extract SPECIFIC amounts and exact section references from the policy text."""
 
     try:
+        # First get detailed summary
         response = policy_intel.client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
@@ -626,12 +660,27 @@ Extract SPECIFIC amounts and exact section references from the policy text."""
         
         summary = response.choices[0].message.content
         
+        # Simplify the policy text for easier understanding
+        try:
+            simplified = await policy_simplifier.simplify_policy_section(
+                policy_text[:3000],  # First 3000 chars
+                section_name="Policy Overview"
+            )
+            if simplified.get("success"):
+                simplified_text = simplified["simplified_text"]
+                # Combine detailed summary with simplified explanation
+                summary = f"{summary}\n\n**Simplified Explanation:**\n\n{simplified_text}"
+        except Exception as e:
+            logger.warning(f"Policy simplification failed for {normalized_name}: {e}")
+            # Continue with original summary if simplification fails
+        
         return {
             "success": True,
             "policy_name": normalized_name,
             "summary": summary,
             "full_name": policy_data.get("name", normalized_name),
-            "coverage_details": "Available"
+            "coverage_details": "Available",
+            "simplified": True
         }
     except Exception as e:
         return {
@@ -777,10 +826,12 @@ async def extract_trip(request: dict):
                     except:
                         pass
                 
-                # Get claims analysis for this destination
+                # Get claims analysis for this destination with activities
+                activities = extracted.get("activities", [])
                 claims_analysis = await claims_analyzer.analyze_destination_and_recommend(
                     destination=destination,
-                    trip_duration=trip_duration
+                    trip_duration=trip_duration,
+                    activities=activities
                 )
                 
                 # Add claims analysis to result
@@ -969,6 +1020,114 @@ async def compare_policies(request: dict):
     )
     return result
 
+@app.post("/api/policy/compare-activities")
+async def compare_policies_for_activities(request: dict):
+    """
+    Enhanced quantitative policy comparison for specific activities (e.g., skiing in Japan)
+    Returns detailed quantitative analysis with exact coverage amounts, scores, and recommendations
+    """
+    activities = request.get("activities", [])
+    policies = request.get("policies", [])
+    trip_details = request.get("trip_details", {})
+    destination = request.get("destination") or trip_details.get("destination")
+    
+    if not activities:
+        return {
+            "success": False,
+            "error": "No activities specified",
+            "message": "Please provide activities (e.g., ['skiing', 'scuba']) for activity-based comparison"
+        }
+    
+    if not policies:
+        return {
+            "success": False,
+            "error": "No policies specified",
+            "message": "Please provide policies to compare"
+        }
+    
+    try:
+        all_comparisons = {}
+        
+        # Compare for each activity
+        for activity in activities:
+            comparison = await activity_matcher.compare_policies_for_activity(
+                activity=activity,
+                policies=policies,
+                trip_details=trip_details
+            )
+            all_comparisons[activity] = comparison
+        
+        # Find best overall policy across all activities
+        policy_scores = {}
+        for activity, comparison in all_comparisons.items():
+            for policy_comp in comparison.get("comparisons", []):
+                policy_name = policy_comp["policy"]
+                score = policy_comp["score"]
+                
+                if policy_name not in policy_scores:
+                    policy_scores[policy_name] = {
+                        "total_score": 0,
+                        "activity_scores": {},
+                        "comparisons": {}
+                    }
+                
+                policy_scores[policy_name]["total_score"] += score
+                policy_scores[policy_name]["activity_scores"][activity] = score
+                policy_scores[policy_name]["comparisons"][activity] = policy_comp
+        
+        # Calculate average scores
+        for policy_name, scores in policy_scores.items():
+            scores["average_score"] = scores["total_score"] / len(activities)
+            scores["policy"] = policy_name
+        
+        # Sort by average score
+        ranked_policies = sorted(
+            policy_scores.values(),
+            key=lambda x: x["average_score"],
+            reverse=True
+        )
+        
+        # Generate simplified policy wordings using policy simplifier
+        simplified_comparisons = {}
+        for activity, comparison in all_comparisons.items():
+            simplified = {}
+            for policy_comp in comparison.get("comparisons", []):
+                policy_name = policy_comp["policy"]
+                
+                # Get simplified policy explanation
+                try:
+                    policy_text = policy_intel.get_policy_text(policy_name)
+                    if policy_text:
+                        simplified_text = await policy_simplifier.simplify_policy_section(
+                            policy_text[:2000],  # First 2000 chars for activity coverage
+                            section_name=f"{activity} Coverage"
+                        )
+                        if simplified_text.get("success"):
+                            simplified[policy_name] = simplified_text["simplified_text"]
+                except Exception as e:
+                    logger.warning(f"Policy simplification failed for {policy_name}: {e}")
+            
+            simplified_comparisons[activity] = simplified
+        
+        return {
+            "success": True,
+            "activities": activities,
+            "destination": destination,
+            "detailed_comparisons": all_comparisons,
+            "ranked_policies": ranked_policies,
+            "best_overall": ranked_policies[0] if ranked_policies else None,
+            "simplified_explanations": simplified_comparisons,
+            "summary": f"Compared {len(policies)} policies for {', '.join(activities)} activities in {destination or 'your destination'}"
+        }
+    
+    except Exception as e:
+        logger.error(f"Activity-based comparison failed: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "Failed to perform quantitative policy comparison"
+        }
+
 @app.post("/api/risk")
 async def get_risk(request: dict):
     result = await predictive_intel.get_risk_assessment(
@@ -995,6 +1154,98 @@ async def create_payment(request: dict):
 async def check_payment(payment_id: str):
     result = await payment_handler.check_payment_status(payment_id)
     return result
+
+@app.post("/api/payment/stripe-mcp")
+async def stripe_mcp_payment(request: dict):
+    """
+    Stripe MCP Payment - One-click payment using Stripe MCP with sandbox dummy card
+    Automatically processes payment using Stripe MCP integration
+    """
+    amount = request.get("amount")
+    currency = request.get("currency", "sgd")
+    policy_id = request.get("policy_id") or request.get("quote_id")
+    user_email = request.get("user_email") or request.get("email")
+    
+    if not amount:
+        return {
+            "success": False,
+            "error": "Amount is required"
+        }
+    
+    try:
+        # Use Stripe MCP integration
+        payment_intent = await mcp_integrations.stripe.create_payment_intent(
+            amount=float(amount),
+            currency=currency,
+            policy_id=policy_id,
+            user_email=user_email
+        )
+        
+        if payment_intent.get("success"):
+            # For sandbox, automatically confirm with dummy card
+            # In production, this would return client_secret for frontend confirmation
+            payment_intent_id = payment_intent.get("payment_intent_id")
+            
+            # Auto-confirm for sandbox (using test card)
+            # Note: In production, use Stripe Elements or Payment Element for secure card input
+            try:
+                import stripe
+                stripe_key = os.getenv("STRIPE_SECRET_KEY", os.getenv("STRIPE_SECRET_KEY_SANDBOX", ""))
+                if stripe_key:
+                    stripe.api_key = stripe_key
+                    
+                    # Auto-confirm with test card for sandbox
+                    # Test card: 4242 4242 4242 4242, any future expiry, any CVC
+                    confirm_result = stripe.PaymentIntent.confirm(
+                        payment_intent_id,
+                        payment_method="pm_card_visa"  # Test payment method
+                    )
+                    
+                    return {
+                        "success": True,
+                        "payment_intent_id": payment_intent_id,
+                        "status": "succeeded",
+                        "amount": amount,
+                        "currency": currency,
+                        "message": "Payment processed successfully using Stripe sandbox",
+                        "sandbox_mode": True
+                    }
+                else:
+                    # Return client_secret for frontend confirmation
+                    return {
+                        "success": True,
+                        "client_secret": payment_intent.get("client_secret"),
+                        "payment_intent_id": payment_intent_id,
+                        "amount": amount,
+                        "currency": currency,
+                        "requires_confirmation": True,
+                        "message": "Payment intent created. Use Stripe Elements to confirm payment."
+                    }
+            except Exception as stripe_error:
+                logger.warning(f"Auto-confirmation failed, returning client_secret: {stripe_error}")
+                # Return client_secret for manual confirmation
+                return {
+                    "success": True,
+                    "client_secret": payment_intent.get("client_secret"),
+                    "payment_intent_id": payment_intent_id,
+                    "amount": amount,
+                    "currency": currency,
+                    "requires_confirmation": True,
+                    "message": "Payment intent created. Confirm payment using the client_secret."
+                }
+        else:
+            return {
+                "success": False,
+                "error": payment_intent.get("error", "Failed to create payment intent")
+            }
+    
+    except Exception as e:
+        logger.error(f"Stripe MCP payment failed: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "Payment processing failed. Please try again."
+        }
 
 @app.get("/api/ancileo/policies")
 async def get_ancileo_policies(
@@ -1068,6 +1319,42 @@ async def identify_user(request: dict):
             "user_found": False,
             "session_profile": profile,
             "needs_data": user_identity.get("needs_data", [])
+        }
+
+@app.post("/api/mcp/profile")
+async def get_mcp_profile(request: dict):
+    """Get comprehensive user profile from Gmail + Instagram via MCP"""
+    email = request.get("email")
+    instagram_username = request.get("instagram_username")
+    
+    if not email:
+        return {
+            "success": False,
+            "error": "Email is required"
+        }
+    
+    try:
+        profile = await mcp_integrations.get_comprehensive_profile(
+            email=email,
+            instagram_username=instagram_username
+        )
+        
+        # Ensure success is set
+        if "success" not in profile:
+            profile["success"] = True
+        
+        return profile
+    except Exception as e:
+        logger.error(f"MCP profile fetch failed: {e}", exc_info=True)
+        # Return a basic profile even on error so user can continue
+        return {
+            "success": True,
+            "email": email,
+            "name": email.split("@")[0].replace(".", " ").title(),
+            "policy_tier": "free",
+            "profile_complete": True,
+            "source": "fallback",
+            "error": None
         }
 
 @app.post("/api/user/profile")
