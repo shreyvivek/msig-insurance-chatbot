@@ -1,4 +1,8 @@
+<<<<<<< Updated upstream
 // File: /Users/shreyv/Documents/GitHub/msig-insurance-chatbot/frontend/app/page.tsx
+=======
+// File: /Users/racshanyaa/Documents/GitHub/msig-insurance-chatbot/frontend/app/page.tsx
+>>>>>>> Stashed changes
 import * as entry from '../../../app/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
