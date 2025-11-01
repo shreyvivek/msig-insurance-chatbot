@@ -47,7 +47,11 @@ print("Starting WanderSure FastAPI server...")
 # Run FastAPI server
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse, Response
 import uvicorn
+import os
+import base64
+from io import BytesIO
 
 app = FastAPI(title="WanderSure API", version="1.0.0")
 
@@ -448,6 +452,52 @@ async def purchase_ancileo_policy(request: dict):
         return {
             "success": False,
             "error": str(e)
+        }
+
+@app.post("/api/tts/clean")
+async def clean_text_for_speech(request: dict):
+    """Clean and prepare text for browser TTS with optimal formatting"""
+    try:
+        text = request.get("text", "")
+        if not text:
+            return {"error": "No text provided"}
+        
+        # Clean text for better speech synthesis
+        import re
+        
+        # Remove emojis and special unicode
+        cleaned = text
+        emoji_pattern = re.compile("["
+            u"\U0001F600-\U0001F64F"  # emoticons
+            u"\U0001F300-\U0001F5FF"  # symbols & pictographs
+            u"\U0001F680-\U0001F6FF"  # transport & map
+            u"\U0001F1E0-\U0001F1FF"  # flags
+            u"\U00002600-\U000026FF"  # misc symbols
+            u"\U00002700-\U000027BF"  # dingbats
+            "]+", flags=re.UNICODE)
+        cleaned = emoji_pattern.sub('', cleaned)
+        
+        # Remove markdown formatting
+        cleaned = re.sub(r'\*\*(.*?)\*\*', r'\1', cleaned)  # Bold
+        cleaned = re.sub(r'\*(.*?)\*', r'\1', cleaned)  # Italic
+        cleaned = re.sub(r'━+', ' ', cleaned)  # Separators to space
+        cleaned = re.sub(r'[•▪▫◦]', '- ', cleaned)  # Bullets
+        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)  # Multiple newlines
+        cleaned = re.sub(r'\[IMAGE:[^\]]+\]', '', cleaned)  # Image tags
+        cleaned = re.sub(r'https?://[^\s]+', '', cleaned)  # URLs
+        cleaned = cleaned.strip()
+        
+        return {
+            "success": True,
+            "text": cleaned,
+            "length": len(cleaned)
+        }
+    except Exception as e:
+        logger.error(f"Text cleaning error: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "text": text[:4000] if text else ""
         }
 
 if __name__ == "__main__":

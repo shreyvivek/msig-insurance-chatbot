@@ -4,6 +4,225 @@ import React, { useState, useRef, useEffect } from 'react'
 import { Send, Mic, Volume2, Sparkles, Plane, Upload, X, History, ChevronLeft, ExternalLink } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
+// Policy Card Component - Beautiful card for displaying policy info
+function PolicyCard({ policyName, onClick }: { policyName: string; onClick: () => void }) {
+  const getPolicyStyles = (name: string) => {
+    if (name.includes('TravelEasy')) {
+      return 'from-blue-500 to-cyan-500 shadow-blue-500/20 hover:shadow-blue-500/40'
+    }
+    if (name.includes('Scootsurance')) {
+      return 'from-purple-500 to-pink-500 shadow-purple-500/20 hover:shadow-purple-500/40'
+    }
+    return 'from-indigo-500 to-blue-500 shadow-indigo-500/20 hover:shadow-indigo-500/40'
+  }
+  
+  return (
+    <button
+      onClick={onClick}
+      className={`group relative overflow-hidden rounded-xl bg-gradient-to-br ${getPolicyStyles(policyName)} p-5 text-left transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl border border-white/10`}
+    >
+      <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+      <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500"></div>
+      <div className="relative z-10">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="font-bold text-white text-lg drop-shadow-lg">{policyName}</h3>
+          <div className="p-2 bg-white/20 rounded-lg group-hover:bg-white/30 transition-colors">
+            <ExternalLink className="w-4 h-4 text-white" />
+          </div>
+        </div>
+        <p className="text-white/90 text-sm font-medium">View full policy details</p>
+      </div>
+    </button>
+  )
+}
+
+// Policy Modal Component
+function PolicyModal({ policyName, isOpen, onClose }: { policyName: string; isOpen: boolean; onClose: () => void }) {
+  const [details, setDetails] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  
+  useEffect(() => {
+    if (isOpen && !details) {
+      setIsLoading(true)
+      fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002'}/api/policy/details?policy_name=${encodeURIComponent(policyName)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            setDetails(data.summary)
+          }
+          setIsLoading(false)
+        })
+        .catch(() => setIsLoading(false))
+    }
+  }, [isOpen, policyName, details])
+  
+  if (!isOpen) return null
+  
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div 
+        className="relative bg-gray-800 rounded-2xl shadow-2xl border border-gray-700 max-w-3xl w-full max-h-[90vh] overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-4 flex items-center justify-between border-b border-gray-700">
+          <h2 className="text-xl font-bold text-white">{policyName}</h2>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5 text-white" />
+          </button>
+        </div>
+        
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          ) : details ? (
+            <div className="prose prose-invert max-w-none">
+              <ReactMarkdown
+                components={{
+                  p: ({ children }) => <p className="text-gray-200 mb-3 leading-relaxed">{children}</p>,
+                  strong: ({ children }) => <strong className="text-blue-300 font-semibold">{children}</strong>,
+                  ul: ({ children }) => <ul className="list-disc list-inside space-y-2 mb-4 text-gray-200">{children}</ul>,
+                  li: ({ children }) => <li className="text-gray-300">{children}</li>,
+                }}
+              >
+                {details}
+              </ReactMarkdown>
+            </div>
+          ) : (
+            <p className="text-gray-400">Unable to load policy details.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Enhanced Message Renderer with cards
+function EnhancedMarkdown({ content }: { content: string }) {
+  const [selectedPolicy, setSelectedPolicy] = useState<string | null>(null)
+  
+  // Extract policy mentions
+  const policyRegex = /(TravelEasy|Scootsurance|MSIG|Policy:\s*[^\]]+)/gi
+  const policies = Array.from(new Set(content.match(policyRegex)?.map(m => m.replace(/Policy:\s*/i, '').trim()) || []))
+  
+  return (
+    <>
+      <ReactMarkdown
+        components={{
+          p: ({ children }) => (
+            <p className="mb-4 text-gray-200 leading-relaxed font-normal text-[15px]">
+              {children}
+            </p>
+          ),
+          strong: ({ children }) => {
+            const text = String(children)
+            const policyMatch = text.match(/(TravelEasy|Scootsurance|MSIG|Policy:?\s*[^\]\s]+)/i)
+            
+            if (policyMatch) {
+              const policyName = policyMatch[1].replace(/Policy:\s*/i, '').trim()
+              return (
+                <button
+                  onClick={() => setSelectedPolicy(policyName)}
+                  className="text-blue-400 font-semibold bg-blue-900/40 px-2 py-1 rounded-md hover:bg-blue-900/60 transition-all border border-blue-700/40 shadow-sm hover:shadow-md hover:scale-105 inline-flex items-center gap-1"
+                >
+                  {children}
+                  <ExternalLink className="w-3 h-3" />
+                </button>
+              )
+            }
+            
+            return (
+              <strong className="text-blue-300 font-semibold bg-gradient-to-r from-blue-400/20 to-purple-400/20 px-1.5 py-0.5 rounded">
+                {children}
+              </strong>
+            )
+          },
+          em: ({ children }) => (
+            <em className="text-gray-300 italic">{children}</em>
+          ),
+          ul: ({ children }) => (
+            <ul className="mb-4 space-y-2 list-none pl-0 my-4">{children}</ul>
+          ),
+          ol: ({ children }) => (
+            <ol className="mb-4 space-y-2 list-decimal pl-6 my-4">{children}</ol>
+          ),
+          li: ({ children }) => (
+            <li className="flex items-start gap-3 text-gray-200 mb-3 leading-relaxed">
+              <span className="text-blue-400 mt-1.5 flex-shrink-0 font-bold text-lg">•</span>
+              <span className="flex-1 text-[15px] font-normal">{children}</span>
+            </li>
+          ),
+          h1: ({ children }) => (
+            <h1 className="text-2xl font-bold text-white mb-4 mt-6 bg-gradient-to-r from-blue-300 to-purple-300 bg-clip-text text-transparent">
+              {children}
+            </h1>
+          ),
+          h2: ({ children }) => (
+            <h2 className="text-xl font-semibold text-white mb-3 mt-5 bg-gradient-to-r from-blue-300 to-indigo-300 bg-clip-text text-transparent">
+              {children}
+            </h2>
+          ),
+          h3: ({ children }) => (
+            <h3 className="text-lg font-semibold text-gray-200 mb-2 mt-4">{children}</h3>
+          ),
+          hr: () => (
+            <div className="my-6">
+              <hr className="border-gray-700/50" />
+            </div>
+          ),
+          code: ({ children }) => (
+            <code className="bg-gray-700/50 text-blue-300 px-2 py-1 rounded text-sm font-mono border border-blue-500/20">
+              {children}
+            </code>
+          ),
+          blockquote: ({ children }) => (
+            <blockquote className="border-l-4 border-blue-500 pl-4 italic text-gray-300 my-4 bg-blue-500/5 py-2 rounded-r">
+              {children}
+            </blockquote>
+          )
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+      
+      {/* Policy Cards Section */}
+      {policies.length > 0 && (
+        <div className="mt-8 pt-6 border-t border-gray-700/50">
+          <div className="mb-5">
+            <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-blue-400" />
+              Referenced Policies
+            </h3>
+            <p className="text-gray-400 text-sm">Click any policy to view detailed information</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {policies.map((policy, idx) => (
+              <PolicyCard
+                key={idx}
+                policyName={policy}
+                onClick={() => setSelectedPolicy(policy)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+      
+      {/* Policy Modal */}
+      {selectedPolicy && (
+        <PolicyModal
+          policyName={selectedPolicy}
+          isOpen={!!selectedPolicy}
+          onClose={() => setSelectedPolicy(null)}
+        />
+      )}
+    </>
+  )
+}
+
 // Policy Tooltip Component with Enhanced Details
 function PolicyTooltip({ policyName, children }: { policyName: string; children: React.ReactNode }) {
   const [showTooltip, setShowTooltip] = useState(false)
@@ -354,16 +573,156 @@ export default function Home() {
     }
   }
 
-  const speakText = (text: string) => {
-    if ('speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance(text)
-      utterance.lang = language === 'en' ? 'en-US' : language
-      utterance.rate = 1.0
-      utterance.pitch = 1.1
-      utterance.volume = 1.0
-      utterance.onstart = () => setIsSpeaking(true)
-      utterance.onend = () => setIsSpeaking(false)
-      window.speechSynthesis.speak(utterance)
+  const cleanTextForSpeech = (text: string): string => {
+    if (!text || typeof text !== 'string') {
+      return 'I have a response for you. Please check the chat window.';
+    }
+    
+    // Remove emojis and special characters
+    let cleaned = text
+      .replace(/[\u{1F600}-\u{1F64F}]/gu, '')
+      .replace(/[\u{1F300}-\u{1F5FF}]/gu, '')
+      .replace(/[\u{1F680}-\u{1F6FF}]/gu, '')
+      .replace(/[\u{2600}-\u{26FF}]/gu, '')
+      .replace(/[\u{2700}-\u{27BF}]/gu, '')
+      .replace(/\*\*(.*?)\*\*/g, '$1')
+      .replace(/\*(.*?)\*/g, '$1')
+      .replace(/━+/g, '')
+      .replace(/[•▪▫◦]/g, '-')
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/\[IMAGE:[^\]]+\]/g, '')
+      .replace(/https?:\/\/[^\s]+/g, '')
+      .trim();
+    
+    return cleaned.length > 10 ? cleaned : 'I have a response for you. Please check the chat window.';
+  }
+
+  const getBestVoice = (): SpeechSynthesisVoice | null => {
+    const voices = window.speechSynthesis.getVoices();
+    if (!voices || voices.length === 0) return null;
+    
+    // Prefer high-quality voices in order of preference
+    const preferredVoices = [
+      'Google US English',
+      'Microsoft Zira',
+      'Microsoft David',
+      'Alex',
+      'Samantha',
+      'Victoria',
+      'Karen',
+      'Fiona',
+      'Tessa',
+      'Moira',
+      'Google UK English Female',
+      'Google UK English Male',
+      'en-US',
+      'en-GB'
+    ];
+    
+    // First, try to find a preferred voice
+    for (const preferred of preferredVoices) {
+      const voice = voices.find(v => 
+        v.name.includes(preferred) || 
+        v.lang.includes(preferred) ||
+        v.voiceURI.includes(preferred)
+      );
+      if (voice && voice.localService === false) { // Prefer cloud voices
+        return voice;
+      }
+    }
+    
+    // If no preferred found, get any high-quality English voice
+    const englishVoices = voices.filter(v => 
+      v.lang.startsWith('en') && 
+      !v.name.toLowerCase().includes('novox') && // Skip low-quality voices
+      !v.name.toLowerCase().includes('bad')
+    );
+    
+    if (englishVoices.length > 0) {
+      // Prefer voices that are not locally synthesized (often better quality)
+      const cloudVoice = englishVoices.find(v => !v.localService);
+      if (cloudVoice) return cloudVoice;
+      return englishVoices[0];
+    }
+    
+    // Fallback to first available voice
+    return voices[0];
+  }
+
+  const speakText = async (text: string) => {
+    try {
+      if (!text || typeof text !== 'string') return;
+      
+      let cleanedText = cleanTextForSpeech(text);
+      if (cleanedText.length < 3) return;
+      
+      // Optionally clean on backend for consistency
+      try {
+        const response = await fetch(`${API_URL}/api/tts/clean`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: cleanedText })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.text) {
+            cleanedText = data.text;
+          }
+        }
+      } catch (error) {
+        // Use frontend-cleaned text if backend fails
+        console.log('Backend text cleaning failed, using frontend version');
+      }
+      
+      useBrowserTTS(cleanedText);
+    } catch (error) {
+      console.error('TTS error:', error);
+      setIsSpeaking(false);
+    }
+  }
+
+  const useBrowserTTS = (text: string) => {
+    if (!('speechSynthesis' in window)) {
+      console.warn('Speech synthesis not supported');
+      return;
+    }
+    
+    window.speechSynthesis.cancel(); // Cancel any ongoing speech
+    
+    // Wait for voices to be loaded
+    const speak = () => {
+      const utterance = new SpeechSynthesisUtterance(text);
+      
+      // Get the best available voice
+      const voice = getBestVoice();
+      if (voice) {
+        utterance.voice = voice;
+        utterance.lang = voice.lang;
+      } else {
+        utterance.lang = language === 'en' ? 'en-US' : language;
+      }
+      
+      // Optimized settings for natural speech
+      utterance.rate = 0.95;  // Slightly slower for clarity
+      utterance.pitch = 1.05; // Slightly higher for more natural sound
+      utterance.volume = 1.0;
+      
+      utterance.onstart = () => setIsSpeaking(true);
+      utterance.onend = () => setIsSpeaking(false);
+      utterance.onerror = (event) => {
+        console.error('Speech synthesis error:', event);
+        setIsSpeaking(false);
+      };
+      
+      window.speechSynthesis.speak(utterance);
+    };
+    
+    // Load voices if needed
+    if (window.speechSynthesis.getVoices().length === 0) {
+      window.speechSynthesis.onvoiceschanged = speak;
+    } else {
+      speak();
     }
   }
 
@@ -500,101 +859,28 @@ export default function Home() {
               {messages.map((message, index) => (
                 <div
                   key={index}
-                  className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} message-enter`}
+                  style={{ animationDelay: `${index * 0.05}s` }}
                 >
                   {message.role === 'assistant' && (
-                    <div className="flex items-start gap-3 max-w-[85%]">
-                      <div className="relative flex-shrink-0">
-                        <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-lg blur opacity-50"></div>
-                        <div className="relative bg-gradient-to-br from-blue-500 to-indigo-500 p-2 rounded-lg shadow-lg">
+                    <div className="flex items-start gap-3 max-w-[85%] animate-slide-in-left">
+                      <div className="relative flex-shrink-0 group/avatar">
+                        <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-lg blur opacity-50 animate-pulse-slow"></div>
+                        <div className="relative bg-gradient-to-br from-blue-500 to-indigo-500 p-2 rounded-lg shadow-lg transform transition-transform duration-300 group-hover/avatar:scale-110">
                           <Sparkles className="w-4 h-4 text-white" />
                         </div>
                       </div>
                       <div className="relative group flex-1">
-                        <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-600/20 via-indigo-600/20 to-purple-600/20 rounded-xl blur opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                        <div className="relative bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 rounded-2xl px-6 py-5 shadow-2xl border border-gray-700/50 backdrop-blur-sm">
-                          <div className="prose prose-invert prose-sm max-w-none" style={{ fontFamily: 'Inter, system-ui, -apple-system, sans-serif' }}>
-                        <ReactMarkdown
-                          components={{
-                            p: ({ children }) => <p className="mb-3 text-gray-200 leading-relaxed whitespace-pre-wrap font-normal text-[15px]" style={{ letterSpacing: '0.01em' }}>{children}</p>,
-                            ul: ({ children }) => <ul className="mb-4 space-y-2 list-none pl-0 my-3">{children}</ul>,
-                            ol: ({ children }) => <ol className="mb-4 space-y-2 list-decimal pl-5 my-3">{children}</ol>,
-                            li: ({ children, node }) => {
-                              const text = typeof children === 'string' ? children : String(children)
-                              const isPolicy = /Policy:|\[Policy:|TravelEasy|Scootsurance|MSIG/i.test(text)
-                              
-                              const processText = (text: string) => {
-                                const policyRegex = /(TravelEasy|Scootsurance|MSIG|Policy:\s*[^\]]+)/gi
-                                const parts = []
-                                let lastIndex = 0
-                                let match
-                                
-                                while ((match = policyRegex.exec(text)) !== null) {
-                                  if (match.index > lastIndex) {
-                                    parts.push(text.substring(lastIndex, match.index))
-                                  }
-                                  
-                                  const policyName = match[1].replace(/Policy:\s*/i, '').trim()
-                                  parts.push(
-                                    <PolicyTooltip key={match.index} policyName={policyName}>
-                                      <span className="text-blue-300 font-medium cursor-help hover:text-blue-200 transition-colors underline decoration-blue-500/30 decoration-dotted underline-offset-2">
-                                        {match[0]}
-                                      </span>
-                                    </PolicyTooltip>
-                                  )
-                                  
-                                  lastIndex = match.index + match[0].length
-                                }
-                                
-                                if (lastIndex < text.length) {
-                                  parts.push(text.substring(lastIndex))
-                                }
-                                
-                                return parts.length > 0 ? parts : [text]
-                              }
-                              
-                              return (
-                                <li className="flex items-start gap-3 text-gray-200 mb-3 leading-relaxed group/item">
-                                  <span className="text-blue-400 mt-1 flex-shrink-0 font-bold text-xl leading-none">•</span>
-                                  <span className={`flex-1 text-[15px] font-normal ${isPolicy ? 'font-medium' : ''}`} style={{ letterSpacing: '0.01em', lineHeight: '1.6' }}>
-                                    {text.replace(/^•\s*/, '').split('\n').map((line, i, arr) => (
-                                      <span key={i}>
-                                        {processText(line)}
-                                        {i < arr.length - 1 && <br />}
-                                      </span>
-                                    ))}
-                                  </span>
-                                </li>
-                              )
-                            },
-                            strong: ({ children }) => {
-                              const text = String(children)
-                              const policyMatch = text.match(/(TravelEasy|Scootsurance|MSIG|Policy:?\s*[^\]\s]+)/i)
-                              
-                              if (policyMatch) {
-                                const policyName = policyMatch[1].replace(/Policy:\s*/i, '').trim()
-                                return (
-                                  <PolicyTooltip policyName={policyName}>
-                                    <strong className="text-blue-400 font-semibold bg-blue-900/40 px-2 py-1 rounded-md cursor-help hover:bg-blue-900/60 transition-all border border-blue-700/40 shadow-sm hover:shadow-md hover:scale-105">
-                                      {children}
-                                    </strong>
-                                  </PolicyTooltip>
-                                )
-                              }
-                              return <strong className="text-white font-semibold">{children}</strong>
-                            },
-                            hr: () => <div className="my-6"><hr className="border-gray-700/50" /></div>,
-                            h1: ({ children }) => <h1 className="text-xl font-bold text-white mb-4 mt-6 tracking-tight" style={{ letterSpacing: '-0.02em' }}>{children}</h1>,
-                            h2: ({ children }) => <h2 className="text-lg font-semibold text-white mb-3 mt-5 tracking-tight" style={{ letterSpacing: '-0.01em' }}>{children}</h2>,
-                            h3: ({ children }) => <h3 className="text-base font-semibold text-gray-200 mb-2 mt-4 tracking-tight">{children}</h3>
-                          }}
-                        >
-                          {message.content
+                        <div className="absolute -inset-1 bg-gradient-to-r from-blue-600/20 via-indigo-600/20 to-purple-600/20 rounded-xl blur-lg opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                        <div className="relative bg-gray-800/95 rounded-2xl px-6 py-6 shadow-2xl border border-gray-700/50 backdrop-blur-md">
+                          {/* Enhanced content with cards */}
+                          <div className="relative prose prose-invert prose-sm max-w-none" style={{ fontFamily: 'Inter, system-ui, -apple-system, sans-serif' }}>
+                        <EnhancedMarkdown
+                          content={message.content
                             .replace(/━━━+/g, '\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n')
                             .replace(/\*\*(Policy:|TravelEasy|Scootsurance|MSIG[^\*]*)\*\*/gi, '**$1**')
-                            .replace(/(Policy:|TravelEasy|Scootsurance|MSIG[^•\n]*)/gi, '**$1**')
-                          }
-                        </ReactMarkdown>
+                            .replace(/(Policy:|TravelEasy|Scootsurance|MSIG[^•\n]*)/gi, '**$1**')}
+                        />
                         </div>
                       
                         {/* Booking Links */}
@@ -657,9 +943,9 @@ export default function Home() {
                 )}
                 
                 {message.role === 'user' && (
-                  <div className="relative group max-w-[85%]">
-                    <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl blur opacity-30 group-hover:opacity-50 transition-opacity"></div>
-                    <div className="relative bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-600 rounded-2xl px-6 py-4 shadow-xl border border-blue-400/20">
+                  <div className="relative group max-w-[85%] animate-slide-in-right">
+                    <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl blur opacity-30 group-hover:opacity-50 transition-opacity animate-pulse-glow"></div>
+                    <div className="relative bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-600 rounded-2xl px-6 py-4 shadow-xl border border-blue-400/20 transform transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl">
                       <p className="text-white font-medium whitespace-pre-wrap leading-relaxed tracking-wide">{message.content}</p>
                     </div>
                   </div>
@@ -669,21 +955,22 @@ export default function Home() {
             </div>
             
             {isLoading && (
-              <div className="flex justify-start gap-3">
+              <div className="flex justify-start gap-3 animate-fade-in">
                 <div className="relative flex-shrink-0">
-                  <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-lg blur opacity-50"></div>
+                  <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-lg blur opacity-50 animate-pulse"></div>
                   <div className="relative bg-gradient-to-br from-blue-500 to-indigo-500 p-2 rounded-lg shadow-lg">
                     <Sparkles className="w-4 h-4 text-white animate-spin" />
                   </div>
                 </div>
                 <div className="relative">
-                  <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-600/20 to-indigo-600/20 rounded-xl blur"></div>
+                  <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-600/20 to-indigo-600/20 rounded-xl blur animate-pulse"></div>
                   <div className="relative bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl px-5 py-4 shadow-xl border border-gray-700/50">
                     <div className="flex gap-2">
                       <div className="w-2.5 h-2.5 bg-blue-400 rounded-full animate-bounce shadow-lg shadow-blue-500/50" style={{ animationDelay: '0ms' }}></div>
                       <div className="w-2.5 h-2.5 bg-indigo-400 rounded-full animate-bounce shadow-lg shadow-indigo-500/50" style={{ animationDelay: '150ms' }}></div>
                       <div className="w-2.5 h-2.5 bg-purple-400 rounded-full animate-bounce shadow-lg shadow-purple-500/50" style={{ animationDelay: '300ms' }}></div>
                     </div>
+                    <p className="text-gray-400 text-xs mt-2 animate-pulse">Wanda is thinking...</p>
                   </div>
                 </div>
               </div>

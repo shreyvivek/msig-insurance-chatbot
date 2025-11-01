@@ -207,9 +207,14 @@ Language: {language}
 CRITICAL: Bullet points with spacing, bold all policy names, travel insurance is PRIMARY!"""
 
         # Get policy data for context
-        from policy_intelligence import PolicyIntelligence
-        policy_intel = PolicyIntelligence()
-        policy_summary = "Available policies: " + ", ".join([p["name"] for p in policy_intel.get_policy_list()])
+        try:
+            from policy_intelligence import PolicyIntelligence
+            policy_intel = PolicyIntelligence()
+            policy_list = await policy_intel.get_policy_list()
+            policy_summary = "Available policies: " + ", ".join([p["name"] for p in policy_list])
+        except Exception as e:
+            logger.warning(f"Failed to get policy list: {e}")
+            policy_summary = "Available policies: TravelEasy, Scootsurance"
         
         # If travel question, connect to insurance needs
         travel_enhancement = ""
