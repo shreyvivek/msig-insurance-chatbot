@@ -509,6 +509,39 @@ CRITICAL INSTRUCTION:
     question_lower_check = question_lower
     needs_policy_details = any(word in question_lower_check for word in ["cancel", "cancellation", "refund", "premium", "price", "cost", "fee"])
     
+    # Check for comparison questions like "compare X and Y"
+    is_comparison_question = any(keyword in question_lower_check for keyword in ["compare", "difference", "vs", "versus", "better between"])
+    
+    # Handle comparison questions
+    if is_comparison_question:
+        try:
+            # Extract policy names from question
+            policy_keywords = ["traveleasy", "scootsurance", "msig", "pre-ex", "pre-ex policy"]
+            mentioned_policies = [name for name in policy_keywords if name in question_lower_check]
+            
+            if mentioned_policies:
+                # Map to full policy names
+                policy_map = {
+                    "traveleasy": "TravelEasy Policy QTD032212",
+                    "scootsurance": "Scootsurance QSR022206_updated",
+                    "msig": "Scootsurance QSR022206_updated",
+                    "pre-ex": "TravelEasy Pre-Ex Policy QTD032212-PX",
+                    "pre-ex policy": "TravelEasy Pre-Ex Policy QTD032212-PX"
+                }
+                
+                policy_names = [policy_map.get(name, name) for name in mentioned_policies if name in policy_map]
+                
+                # Use comparison API
+                comparison_result = await policy_intel.compare_policies(
+                    criteria="overall coverage, pricing, and key benefits",
+                    policies=policy_names
+                )
+                
+                # Inject comparison into context for conversational response
+                enhanced_context = enhanced_context + f"\n\nPOLICY COMPARISON DATA:\n{comparison_result.get('comparison', '')}\n\nUse this comparison data to answer the user's question about differences between the policies. Be conversational and highlight key differences."
+        except Exception as e:
+            logger.error(f"Comparison handling failed: {e}")
+    
     # For cancellation/premium questions, enhance context with policy details
     if needs_policy_details:
         try:
@@ -609,9 +642,6 @@ async def get_role(user_id: str = "default_user"):
 @app.get("/api/policy/details")
 async def get_policy_details(policy_name: str):
     """Get detailed policy information with coverage and citations for tooltip"""
-    from policy_intelligence import PolicyIntelligence
-    policy_intel = PolicyIntelligence()
-    
     # Normalize policy name
     policy_mapping = {
         "TravelEasy": "TravelEasy Policy QTD032212",
@@ -622,6 +652,7 @@ async def get_policy_details(policy_name: str):
     
     normalized_name = policy_mapping.get(policy_name, policy_name)
     
+    # Use cached global policy_intel instance
     # Get full policy text (more context for detailed info)
     policy_data = policy_intel.policy_texts.get(normalized_name, {})
     policy_text = policy_data.get("text", "")
@@ -630,7 +661,7 @@ async def get_policy_details(policy_name: str):
     policy_excerpt = policy_text[:5000] if len(policy_text) > 5000 else policy_text
     
     # Generate detailed summary with coverage amounts and citations
-    summary_prompt = f"""Provide detailed information about this travel insurance policy for a hover tooltip:
+    summary_prompt = f"""Provide detailed information about this travel insurance policy for a modal display:
 
 Policy: {normalized_name}
 
@@ -643,7 +674,6 @@ Provide comprehensive details:
 3. Coverage limits and sub-limits (with exact dollar amounts)
 4. Important exclusions or conditions
 5. Typical use cases and who it's best for
-6. Exact policy citations: [Policy: {normalized_name}, Section: X] format
 
 Format:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -662,39 +692,23 @@ Format:
 
 **Best For**: [Use case description]
 
-**Policy Citation**: [Policy: {normalized_name}, Section: X]
-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Extract SPECIFIC amounts and exact section references from the policy text."""
+Extract SPECIFIC amounts from the policy text. Be concise but informative."""
 
     try:
-        # First get detailed summary
+        # Single optimized LLM call with reduced tokens for speed
         response = policy_intel.client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
-                {"role": "system", "content": "You are an expert at extracting detailed insurance policy information. Always include specific coverage amounts and exact policy citations."},
+                {"role": "system", "content": "You are an expert at extracting detailed insurance policy information. Always include specific coverage amounts. Keep responses concise and conversational."},
                 {"role": "user", "content": summary_prompt}
             ],
             temperature=0.2,
-            max_tokens=500  # More tokens for detailed info
+            max_tokens=250  # Further reduced for faster loading
         )
         
         summary = response.choices[0].message.content
-        
-        # Simplify the policy text for easier understanding
-        try:
-            simplified = await policy_simplifier.simplify_policy_section(
-                policy_text[:3000],  # First 3000 chars
-                section_name="Policy Overview"
-            )
-            if simplified.get("success"):
-                simplified_text = simplified["simplified_text"]
-                # Combine detailed summary with simplified explanation
-                summary = f"{summary}\n\n**Simplified Explanation:**\n\n{simplified_text}"
-        except Exception as e:
-            logger.warning(f"Policy simplification failed for {normalized_name}: {e}")
-            # Continue with original summary if simplification fails
         
         return {
             "success": True,
@@ -705,6 +719,7 @@ Extract SPECIFIC amounts and exact section references from the policy text."""
             "simplified": True
         }
     except Exception as e:
+        logger.error(f"Policy details extraction failed: {e}")
         return {
             "success": False,
             "error": str(e),
@@ -786,6 +801,76 @@ async def translate_text(request: dict):
         context=request.get("context")
     )
     return result
+
+@app.post("/api/translate/messages")
+async def translate_messages(request: dict):
+    """Translate all messages in conversation to target language"""
+    from multilingual_handler import MultilingualHandler
+    ml = MultilingualHandler()
+    
+    messages = request.get("messages", [])
+    target_language = request.get("target_language", "en")
+    
+    # Translate all assistant messages
+    translated_messages = []
+    for msg in messages:
+        # Preserve all message fields
+        translated_msg = dict(msg)
+        
+        if msg.get("role") == "assistant":
+            # Translate assistant content
+            result = await ml.translate(
+                text=msg.get("content", ""),
+                target_language=target_language,
+                context="travel insurance conversation"
+            )
+            translated_msg["content"] = result.get("translated", msg.get("content"))
+            
+            # Translate quotes if present
+            if msg.get("quotes"):
+                translated_quotes = []
+                for quote in msg.get("quotes", []):
+                    translated_quote = dict(quote)
+                    # Translate quote fields that contain user-facing text
+                    if quote.get("recommended_for"):
+                        trans_result = await ml.translate(
+                            text=quote["recommended_for"],
+                            target_language=target_language
+                        )
+                        translated_quote["recommended_for"] = trans_result.get("translated", quote["recommended_for"])
+                    
+                    # Translate benefits array
+                    if quote.get("benefits"):
+                        translated_benefits = []
+                        for benefit in quote["benefits"]:
+                            trans_result = await ml.translate(
+                                text=benefit,
+                                target_language=target_language
+                            )
+                            translated_benefits.append(trans_result.get("translated", benefit))
+                        translated_quote["benefits"] = translated_benefits
+                    
+                    # Translate reasons array
+                    if quote.get("reasons"):
+                        translated_reasons = []
+                        for reason in quote["reasons"]:
+                            trans_result = await ml.translate(
+                                text=reason,
+                                target_language=target_language
+                            )
+                            translated_reasons.append(trans_result.get("translated", reason))
+                        translated_quote["reasons"] = translated_reasons
+                    
+                    translated_quotes.append(translated_quote)
+                translated_msg["quotes"] = translated_quotes
+        
+        translated_messages.append(translated_msg)
+    
+    return {
+        "success": True,
+        "translated_messages": translated_messages,
+        "target_language": target_language
+    }
 
 @app.post("/api/extract")
 async def extract_trip(request: dict):

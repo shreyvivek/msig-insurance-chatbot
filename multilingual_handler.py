@@ -69,32 +69,36 @@ class MultilingualHandler:
                 "language": target_language
             }
         
-        prompt = f"""Translate this text from {self.supported_languages.get(source_language, {}).get('name', source_language)} to {self.supported_languages.get(target_language, {}).get('name', target_language)}:
+        prompt = f"""Translate from {self.supported_languages.get(source_language, {}).get('name', source_language)} to {self.supported_languages.get(target_language, {}).get('name', target_language)}:
 
-Context: {context or 'General conversation about travel insurance'}
-
-Text: {text}
-
-Important:
-1. Translate naturally and conversationally
-2. Maintain the friendly, travel-buddy tone
-3. Adapt cultural references appropriately
-4. Keep emojis and personality intact
-5. Ensure insurance terms are accurately translated
-
-Return ONLY the translated text."""
+{text}"""
 
         try:
             response = self.client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=[
-                    {"role": "system", "content": "You are an expert translator specializing in travel and insurance terminology. Translate naturally while preserving tone and cultural context."},
+                    {"role": "system", "content": "Translate the text exactly, keeping all formatting unchanged. Return only the translation."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3
+                temperature=0.1
             )
             
             translated = response.choices[0].message.content.strip()
+            
+            # Clean up any extra explanations the LLM added
+            lines = translated.split('\n')
+            cleaned_lines = []
+            for line in lines:
+                # Stop if we hit any explanatory text
+                stripped = line.strip()
+                if any(stripped.startswith(x) for x in [
+                    '1.', '2.', '3.', '4.', '5.', '6.', '7.', '8.', '9.', 
+                    'CRITICAL', 'முக்கிய', 'IMPORTANT', 'குறிப்பு', 'Note:', 'குறிப்பு:', 
+                    'விதிகள்:', 'Rules:', '❌', '✅', 'Translation:', 'மொழிபெயர்ப்பு:'
+                ]):
+                    break
+                cleaned_lines.append(line)
+            translated = '\n'.join(cleaned_lines).strip()
             
             return {
                 "success": True,

@@ -15,6 +15,262 @@ function cleanPolicyName(name: string): string {
     .replace(/\s+/g, ' '); // Normalize spaces
 }
 
+// Function to auto-download policy receipt
+function downloadPolicyReceipt(receiptData: {
+  policyName: string
+  policyNumber: string
+  policyType: string
+  price: number
+  currency: string
+  travelers: any[]
+  tripDetails?: any
+  purchaseDate: string
+}) {
+  try {
+    // Generate PDF content as HTML
+    const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      padding: 40px;
+      background: #f5f5f5;
+    }
+    .receipt-container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+      padding: 40px;
+    }
+    .header {
+      text-align: center;
+      border-bottom: 3px solid #0066cc;
+      padding-bottom: 20px;
+      margin-bottom: 30px;
+    }
+    .logo {
+      font-size: 32px;
+      font-weight: bold;
+      color: #0066cc;
+      margin-bottom: 10px;
+    }
+    .subtitle {
+      color: #666;
+      font-size: 14px;
+    }
+    .receipt-title {
+      font-size: 28px;
+      color: #333;
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+    .section {
+      margin-bottom: 30px;
+    }
+    .section-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #0066cc;
+      margin-bottom: 15px;
+      border-left: 4px solid #0066cc;
+      padding-left: 10px;
+    }
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 12px 0;
+      border-bottom: 1px solid #eee;
+    }
+    .info-label {
+      font-weight: 600;
+      color: #666;
+      flex: 1;
+    }
+    .info-value {
+      color: #333;
+      flex: 2;
+      text-align: right;
+    }
+    .highlight {
+      background: #f0f9ff;
+      padding: 15px;
+      border-radius: 8px;
+      border-left: 4px solid #0066cc;
+      margin-top: 10px;
+    }
+    .amount {
+      font-size: 36px;
+      font-weight: bold;
+      color: #0066cc;
+    }
+    .footer {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 2px solid #eee;
+      text-align: center;
+      color: #666;
+      font-size: 12px;
+    }
+    .policy-number {
+      font-family: 'Courier New', monospace;
+      font-size: 20px;
+      font-weight: bold;
+      color: #0066cc;
+      letter-spacing: 1px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid #eee;
+    }
+    th {
+      background: #f8f9fa;
+      font-weight: 600;
+      color: #666;
+    }
+    .success-badge {
+      display: inline-block;
+      background: #10b981;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="receipt-container">
+    <div class="header">
+      <div class="logo">🛡️ WanderSure</div>
+      <div class="subtitle">Travel Insurance Policy Receipt</div>
+    </div>
+    
+    <div class="success-badge">✓ Payment Confirmed</div>
+    <div class="receipt-title">Policy Receipt</div>
+    
+    <div class="section">
+      <div class="section-title">Policy Information</div>
+      <div class="info-row">
+        <span class="info-label">Policy Name:</span>
+        <span class="info-value">${receiptData.policyName}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Policy Number:</span>
+        <span class="info-value policy-number">${receiptData.policyNumber}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Policy Type:</span>
+        <span class="info-value">${receiptData.policyType}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Purchase Date:</span>
+        <span class="info-value">${new Date(receiptData.purchaseDate).toLocaleString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+      </div>
+    </div>
+
+    ${receiptData.tripDetails ? `
+    <div class="section">
+      <div class="section-title">Trip Information</div>
+      ${receiptData.tripDetails.destination ? `
+      <div class="info-row">
+        <span class="info-label">Destination:</span>
+        <span class="info-value">${receiptData.tripDetails.destination}</span>
+      </div>
+      ` : ''}
+      ${receiptData.tripDetails.source ? `
+      <div class="info-row">
+        <span class="info-label">Origin:</span>
+        <span class="info-value">${receiptData.tripDetails.source}</span>
+      </div>
+      ` : ''}
+      ${receiptData.tripDetails.departure_date && receiptData.tripDetails.return_date ? `
+      <div class="info-row">
+        <span class="info-label">Travel Period:</span>
+        <span class="info-value">
+          ${new Date(receiptData.tripDetails.departure_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - 
+          ${new Date(receiptData.tripDetails.return_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+        </span>
+      </div>
+      ` : ''}
+    </div>
+    ` : ''}
+
+    <div class="section">
+      <div class="section-title">Travelers</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Date of Birth</th>
+            <th>Email</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${receiptData.travelers.map((t: any) => `
+          <tr>
+            <td>${t.firstName || t.name || 'N/A'} ${t.lastName || ''}</td>
+            <td>${t.dateOfBirth || t.dob || 'N/A'}</td>
+            <td>${t.email || 'N/A'}</td>
+          </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Payment Summary</div>
+      <div class="highlight">
+        <div class="info-row">
+          <span class="info-label">Total Amount Paid:</span>
+          <span class="info-value amount">${receiptData.currency} ${receiptData.price.toFixed(2)}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <p>This is a computer-generated receipt. Please keep this for your records.</p>
+      <p style="margin-top: 10px;">
+        For support, please contact us at support@wandersure.com
+      </p>
+      <p style="margin-top: 5px; color: #999;">
+        Generated on ${new Date().toLocaleString('en-US')}
+      </p>
+    </div>
+  </div>
+</body>
+</html>
+    `.trim()
+    
+    // Create blob and download
+    const blob = new Blob([htmlContent], { type: 'text/html' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `Policy_Receipt_${receiptData.policyNumber}_${Date.now()}.html`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    
+    console.log('✅ Policy receipt downloaded successfully')
+  } catch (error) {
+    console.error('Failed to download receipt:', error)
+  }
+}
+
 // Policy Card Component - Beautiful card for displaying policy info
 function PolicyCard({ policyName, onClick, isAncileo, source }: { 
   policyName: string
@@ -555,15 +811,25 @@ function PurchaseForm({ quote, quoteId, tripDetails, isOpen, onClose, onComplete
 }
 
 // Quote Card with Purchase Button
-function QuoteCard({ quote, quoteId, tripDetails, onPurchase }: { 
+function QuoteCard({ quote, quoteId, tripDetails, onPurchase, language = 'en' }: { 
   quote: { plan_name: string; price: number; currency: string; recommended_for: string; offer_id?: string; product_code?: string; source?: string; score?: number; benefits?: string[]; reasons?: string[]; cost_source?: string }
   quoteId?: string
   tripDetails?: any
-  onPurchase: (quote: any, insureds: any[], paymentInfo: any) => void 
+  onPurchase: (quote: any, insureds: any[], paymentInfo: any) => void
+  language?: string
 }) {
   const cleanedName = cleanPolicyName(quote.plan_name)
   const [showPurchaseForm, setShowPurchaseForm] = useState(false)
   const isAncileo = quote.source === 'ancileo' || quote.offer_id
+  
+  // UI Translations
+  const translations = {
+    en: { buyNow: 'Buy Now', matchScore: 'Match Score', keyBenefits: 'Key Benefits' },
+    ta: { buyNow: 'இப்போது வாங்க', matchScore: 'பொருந்தும் மதிப்பெண்', keyBenefits: 'முக்கிய நன்மைகள்' },
+    zh: { buyNow: '立即购买', matchScore: '匹配分数', keyBenefits: '主要福利' },
+    ms: { buyNow: 'Beli Sekarang', matchScore: 'Skor Padanan', keyBenefits: 'Faedah Utama' }
+  }
+  const t = translations[language as keyof typeof translations] || translations.en
   
   return (
     <>
@@ -594,7 +860,7 @@ function QuoteCard({ quote, quoteId, tripDetails, onPurchase }: {
         {quote.score !== undefined && (
           <div className="mb-4">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-gray-400">Match Score</span>
+              <span className="text-xs text-gray-400">{t.matchScore}</span>
               <span className="text-sm font-semibold text-blue-400">{quote.score}/100</span>
             </div>
             <div className="w-full bg-gray-700 rounded-full h-2">
@@ -607,7 +873,7 @@ function QuoteCard({ quote, quoteId, tripDetails, onPurchase }: {
         )}
         {quote.benefits && quote.benefits.length > 0 && (
           <div className="mb-4">
-            <p className="text-xs text-gray-400 mb-1">Key Benefits:</p>
+            <p className="text-xs text-gray-400 mb-1">{t.keyBenefits}:</p>
             <ul className="text-xs text-gray-300 space-y-1">
               {quote.benefits.slice(0, 3).map((benefit: string, idx: number) => (
                 <li key={idx} className="flex items-start gap-1">
@@ -623,7 +889,7 @@ function QuoteCard({ quote, quoteId, tripDetails, onPurchase }: {
           className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-3 px-4 rounded-lg transition-all flex items-center justify-center gap-2"
         >
           <ShoppingCart className="w-4 h-4" />
-          Buy Now
+          {t.buyNow}
         </button>
       </div>
 
@@ -645,8 +911,17 @@ function QuoteCard({ quote, quoteId, tripDetails, onPurchase }: {
 }
 
 // Enhanced Message Renderer with cards
-function EnhancedMarkdown({ content, quotes }: { content: string; quotes?: any[] }) {
+function EnhancedMarkdown({ content, quotes, language = 'en' }: { content: string; quotes?: any[]; language?: string }) {
   const [selectedPolicy, setSelectedPolicy] = useState<any | null>(null)
+  
+  // UI Translations
+  const translations = {
+    en: { buyNow: 'Buy Now', availablePlans: 'Available Insurance Plans', matchScore: 'Match Score', keyBenefits: 'Key Benefits', suggestedQuestions: 'Suggested Questions:' },
+    ta: { buyNow: 'இப்போது வாங்க', availablePlans: 'கிடைக்கும் காப்பீட்டு திட்டங்கள்', matchScore: 'பொருந்தும் மதிப்பெண்', keyBenefits: 'முக்கிய நன்மைகள்', suggestedQuestions: 'பரிந்துரைக்கப்பட்ட கேள்விகள்:' },
+    zh: { buyNow: '立即购买', availablePlans: '可用保险计划', matchScore: '匹配分数', keyBenefits: '主要福利', suggestedQuestions: '建议问题:' },
+    ms: { buyNow: 'Beli Sekarang', availablePlans: 'Pelan Insurans Tersedia', matchScore: 'Skor Padanan', keyBenefits: 'Faedah Utama', suggestedQuestions: 'Cadangan Soalan:' }
+  }
+  const t = translations[language as keyof typeof translations] || translations.en
   
   // Extract policy mentions from text content (local policies) - only if content actually mentions policies
   const policyRegex = /(TravelEasy|Scootsurance|MSIG|Policy:\s*[^\]]+)/gi
@@ -945,7 +1220,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false)
   const [isListening, setIsListening] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
-  const [language, setLanguage] = useState('en')
+  const [language, setLanguage] = useState('en') // For UI translations only - Google Translate handles page translation
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [showHistory, setShowHistory] = useState(true)
@@ -966,6 +1241,40 @@ export default function Home() {
     { code: 'zh', name: 'Chinese', native: '中文', emoji: '🇨🇳' },
     { code: 'ms', name: 'Malay', native: 'Bahasa Melayu', emoji: '🇲🇾' }
   ]
+
+  // UI Translations
+  const translations = {
+    en: {
+      buyNow: 'Buy Now',
+      availablePlans: 'Available Insurance Plans',
+      matchScore: 'Match Score',
+      keyBenefits: 'Key Benefits',
+      suggestedQuestions: 'Suggested Questions:'
+    },
+    ta: {
+      buyNow: 'இப்போது வாங்க',
+      availablePlans: 'கிடைக்கும் காப்பீட்டு திட்டங்கள்',
+      matchScore: 'பொருந்தும் மதிப்பெண்',
+      keyBenefits: 'முக்கிய நன்மைகள்',
+      suggestedQuestions: 'பரிந்துரைக்கப்பட்ட கேள்விகள்:'
+    },
+    zh: {
+      buyNow: '立即购买',
+      availablePlans: '可用保险计划',
+      matchScore: '匹配分数',
+      keyBenefits: '主要福利',
+      suggestedQuestions: '建议问题:'
+    },
+    ms: {
+      buyNow: 'Beli Sekarang',
+      availablePlans: 'Pelan Insurans Tersedia',
+      matchScore: 'Skor Padanan',
+      keyBenefits: 'Faedah Utama',
+      suggestedQuestions: 'Cadangan Soalan:'
+    }
+  }
+
+  const t = translations[language as keyof typeof translations] || translations.en
 
   // Load chat history from localStorage
   useEffect(() => {
@@ -1096,33 +1405,34 @@ export default function Home() {
     initializeGreeting()
   }
   
-  // Change language and translate current messages
-  const handleLanguageChange = async (newLang: string) => {
-    setLanguage(newLang)
-    setShowLanguageMenu(false)
-    
-    // Update voice recognition language
-    if (recognitionRef.current) {
-      const langMap: { [key: string]: string } = {
-        'en': 'en-US',
-        'ta': 'ta-IN',
-        'zh': 'zh-CN',
-        'ms': 'ms-MY'
+  // Google Translate handles everything - no custom translation needed
+  useEffect(() => {
+    // Load Google Translate script dynamically
+    if (typeof window !== 'undefined') {
+      // Declare function globally
+      (window as any).loadGoogleTranslate = function() {
+        if (typeof google !== 'undefined' && google.translate && google.translate.TranslateElement) {
+          new google.translate.TranslateElement({
+            pageLanguage: 'en',
+            includedLanguages: 'en,ta,zh-CN,ms-MY',
+            layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
+            autoDisplay: false
+          }, 'google_translate_element');
+        }
       }
-      recognitionRef.current.lang = langMap[newLang] || newLang
-    }
-    
-    // Translate current messages if needed
-    if (messages.length > 0 && newLang !== 'en') {
-      try {
-        // Translate recent messages (optional - can be expensive)
-        // For now, just update language for future messages
-        console.log(`Language changed to ${newLang}`)
-      } catch (error) {
-        console.error('Translation error:', error)
+      
+      // Load the script if not already loaded
+      if (!document.querySelector('script[src*="translate.google.com"]')) {
+        const script = document.createElement('script');
+        script.src = '//translate.google.com/translate_a/element.js?cb=loadGoogleTranslate';
+        script.async = true;
+        document.body.appendChild(script);
+      } else if ((window as any).loadGoogleTranslate) {
+        // Script already loaded, just call it
+        (window as any).loadGoogleTranslate();
       }
     }
-  }
+  }, [])
 
   const initializeGreeting = async () => {
     // Set initial greeting immediately so user sees something
@@ -1742,46 +2052,28 @@ export default function Home() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {/* Language Switcher */}
-                  <div className="relative">
-                    <button
-                      onClick={() => setShowLanguageMenu(!showLanguageMenu)}
-                      className="flex items-center gap-2 px-3 py-2 bg-gray-700/50 hover:bg-gray-700 rounded-lg transition-colors"
-                      title="Change Language"
-                    >
-                      <Globe className="w-4 h-4 text-gray-300" />
-                      <span className="text-sm text-gray-300">
-                        {languages.find(l => l.code === language)?.emoji} {languages.find(l => l.code === language)?.native}
-                      </span>
-                    </button>
-                    {showLanguageMenu && (
-                      <>
-                        <div 
-                          className="fixed inset-0 z-40" 
-                          onClick={() => setShowLanguageMenu(false)}
-                        ></div>
-                        <div className="absolute right-0 mt-2 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50">
-                          {languages.map((lang) => (
-                            <button
-                              key={lang.code}
-                              onClick={(e) => {
-                                e.preventDefault()
-                                e.stopPropagation()
-                                handleLanguageChange(lang.code)
-                              }}
-                              className={`w-full text-left px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-2 ${
-                                language === lang.code ? 'bg-gray-700' : ''
-                              }`}
-                            >
-                              <span>{lang.emoji}</span>
-                              <span className="text-sm text-gray-200">{lang.name}</span>
-                              <span className="text-xs text-gray-500 ml-auto">{lang.native}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
+                  {/* Google Translate Widget */}
+                  <div id="google_translate_element" className="flex items-center">
+                    {/* Will be populated by Google Translate automatically */}
                   </div>
+                  <style jsx>{`
+                    #google_translate_element {
+                      font-size: 14px !important;
+                    }
+                    .goog-te-banner-frame {
+                      display: none !important;
+                    }
+                    body {
+                      top: 0 !important;
+                    }
+                    .goog-te-balloon-frame {
+                      display: none !important;
+                    }
+                    .goog-text-highlight {
+                      background: transparent !important;
+                      box-shadow: none !important;
+                    }
+                  `}</style>
                 </div>
               </div>
             </div>
@@ -1824,6 +2116,7 @@ export default function Home() {
                             .replace(/\*\*(Policy:|TravelEasy|Scootsurance|MSIG[^\*]*)\*\*/gi, '**$1**')
                             .replace(/(Policy:|TravelEasy|Scootsurance|MSIG[^•\n]*)/gi, '**$1**')}
                           quotes={message.quotes}
+                          language={language}
                         />
                         </div>
                       
@@ -1833,7 +2126,7 @@ export default function Home() {
                             <div className="mb-4 flex items-center justify-between">
                               <h3 className="text-lg font-bold text-white flex items-center gap-2">
                                 <Sparkles className="w-5 h-5 text-blue-400" />
-                                Available Insurance Plans
+                                {t.availablePlans}
                                 {message.quotes.some((q: any) => q.source === 'taxonomy_match') && (
                                   <span className="ml-2 px-2 py-1 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-semibold rounded-full">
                                     Matched via Taxonomy
@@ -1854,6 +2147,7 @@ export default function Home() {
                                   quote={quote}
                                   quoteId={message.quote_id}
                                   tripDetails={message.trip_details}
+                                  language={language}
                                   onPurchase={async (selectedQuote, insureds, paymentInfo) => {
                                     // Handle purchase - support both Ancileo and local policies
                                     try {
@@ -1919,9 +2213,21 @@ export default function Home() {
                                         
                                         const purchaseData = await purchaseResponse.json()
                                         if (purchaseData.success) {
+                                          // Auto-download receipt
+                                          downloadPolicyReceipt({
+                                            policyName: cleanPolicyName(selectedQuote.plan_name),
+                                            policyNumber: purchaseData.policy_number || 'Processing...',
+                                            policyType: 'Ancileo',
+                                            price: selectedQuote.price,
+                                            currency: selectedQuote.currency || 'SGD',
+                                            travelers: insureds,
+                                            tripDetails: message.trip_details,
+                                            purchaseDate: new Date().toISOString()
+                                          })
+                                          
                                           const purchaseMsg: Message = {
                                             role: 'assistant',
-                                            content: `✅ **Purchase Successful!**\n\nYour insurance policy has been purchased:\n\n• Policy: ${cleanPolicyName(selectedQuote.plan_name)}\n• Source: Ancileo\n• Policy Number: ${purchaseData.policy_number || 'Processing...'}\n• Amount: ${selectedQuote.currency || 'SGD'} ${selectedQuote.price.toFixed(2)}\n\nConfirmation email will be sent shortly.`,
+                                            content: `✅ **Purchase Successful!**\n\nYour insurance policy has been purchased:\n\n• Policy: ${cleanPolicyName(selectedQuote.plan_name)}\n• Source: Ancileo\n• Policy Number: ${purchaseData.policy_number || 'Processing...'}\n• Amount: ${selectedQuote.currency || 'SGD'} ${selectedQuote.price.toFixed(2)}\n\n📄 Policy receipt downloaded to your desktop.\n\nConfirmation email will be sent shortly.`,
                                             timestamp: new Date()
                                           }
                                           setMessages((prev: Message[]) => [...prev, purchaseMsg])
@@ -1947,9 +2253,21 @@ export default function Home() {
                                         
                                         const paymentData = await paymentResponse.json()
                                         if (paymentData.success) {
+                                          // Auto-download receipt for local policies
+                                          downloadPolicyReceipt({
+                                            policyName: cleanPolicyName(selectedQuote.plan_name),
+                                            policyNumber: paymentData.policy_number || paymentData.payment_id || 'Processing...',
+                                            policyType: selectedQuote.source === 'taxonomy_match' ? 'Taxonomy Matched' : 'Local',
+                                            price: selectedQuote.price,
+                                            currency: selectedQuote.currency || 'SGD',
+                                            travelers: insureds,
+                                            tripDetails: message.trip_details,
+                                            purchaseDate: new Date().toISOString()
+                                          })
+                                          
                                           const purchaseMsg: Message = {
                                             role: 'assistant',
-                                            content: `✅ **Purchase Successful!**\n\nYour insurance policy has been purchased:\n\n• Policy: ${cleanPolicyName(selectedQuote.plan_name)}\n• Source: ${selectedQuote.source === 'taxonomy_match' ? 'Taxonomy Matched' : 'Local'}\n• Policy Number: ${paymentData.policy_number || paymentData.payment_id || 'Processing...'}\n• Amount: ${selectedQuote.currency || 'SGD'} ${selectedQuote.price.toFixed(2)}\n\n${paymentData.payment_url ? `[Complete Payment](${paymentData.payment_url})` : 'Confirmation email will be sent shortly.'}`,
+                                            content: `✅ **Purchase Successful!**\n\nYour insurance policy has been purchased:\n\n• Policy: ${cleanPolicyName(selectedQuote.plan_name)}\n• Source: ${selectedQuote.source === 'taxonomy_match' ? 'Taxonomy Matched' : 'Local'}\n• Policy Number: ${paymentData.policy_number || paymentData.payment_id || 'Processing...'}\n• Amount: ${selectedQuote.currency || 'SGD'} ${selectedQuote.price.toFixed(2)}\n\n📄 Policy receipt downloaded to your desktop.\n\n${paymentData.payment_url ? `[Complete Payment](${paymentData.payment_url})` : 'Confirmation email will be sent shortly.'}`,
                                             timestamp: new Date()
                                           }
                                           setMessages((prev: Message[]) => [...prev, purchaseMsg])
@@ -2000,8 +2318,8 @@ export default function Home() {
 
                         {/* Suggested Questions - Clickable Buttons */}
                         {message.suggested_questions && message.suggested_questions.length > 0 && (
-                          <div className="mt-4 pt-4 border-t border-gray-700/50">
-                            <p className="text-xs text-gray-400 mb-3 font-medium">Suggested questions:</p>
+                          <div className="mt-6 pt-6 border-t border-gray-700/50">
+                            <p className="text-xs text-gray-400 mb-3 font-medium uppercase tracking-wide">💬 {t.suggestedQuestions}</p>
                             <div className="flex flex-wrap gap-2">
                               {message.suggested_questions.map((sq: any, i: number) => (
                                 <button
