@@ -21,16 +21,17 @@ class PaymentHandler:
     
     def __init__(self):
         self.client = Groq(api_key=os.getenv("GROQ_API_KEY", ""))
-        self.stripe_key = os.getenv("STRIPE_SECRET_KEY", "")
+        self.stripe_key = os.getenv("STRIPE_SECRET_KEY") or os.getenv("STRIPE_TEST_SECRET", "")
         if self.stripe_key:
             stripe.api_key = self.stripe_key
         else:
             logger.warning("STRIPE_SECRET_KEY not set. Payment features will not work.")
         
-        # DynamoDB setup
+        # DynamoDB setup - with in-memory fallback
         self.dynamodb_endpoint = os.getenv("DDB_ENDPOINT", "http://localhost:8000")
         self.aws_region = os.getenv("AWS_REGION", "ap-southeast-1")
         self.table_name = os.getenv("DYNAMODB_PAYMENTS_TABLE", "lea-payments-local")
+        self.use_in_memory = False
         
         try:
             self.dynamodb = boto3.resource(
@@ -41,16 +42,31 @@ class PaymentHandler:
                 aws_secret_access_key='dummy'
             )
             self.payments_table = self.dynamodb.Table(self.table_name)
+            # Test connection
+            self.payments_table.table_status
             logger.info("DynamoDB connected successfully")
         except Exception as e:
-            logger.error(f"DynamoDB connection failed: {e}")
+            logger.warning(f"DynamoDB connection failed: {e}")
+            logger.info("Using in-memory storage fallback for payment records")
             self.payments_table = None
+            self.use_in_memory = True
+            self.in_memory_payments = {}
     
-    async def create_payment(self, quote_id: str, policy_name: str, amount: int,
-                            currency: str = "SGD", user_id: str = "default_user") -> Dict:
+    async def create_payment(self, quote_id: str, policy_name: str, amount, currency: str = "SGD", user_id: str = "default_user") -> Dict:
         """Create a Stripe payment session"""
         
         payment_intent_id = f"payment_{uuid.uuid4().hex[:12]}"
+        
+        # Convert amount to cents for Stripe (ensure it's at least $0.50)
+        # If amount is already large, assume it's in cents; otherwise assume dollars
+        amount_in_dollars = float(amount) if float(amount) < 1000 else float(amount) / 100
+        amount_in_cents = int(round(amount_in_dollars * 100))
+        
+        # Ensure minimum charge
+        if amount_in_cents < 50:
+            amount_in_cents = 50  # $0.50 SGD minimum
+        
+        logger.info(f"Creating payment: {amount_in_dollars} {currency} = {amount_in_cents} cents")
         
         # Create payment record in DynamoDB
         payment_record = {
@@ -59,23 +75,25 @@ class PaymentHandler:
             'quote_id': quote_id,
             'policy_name': policy_name,
             'payment_status': 'pending',
-            'amount': amount,
+            'amount': amount_in_dollars,  # Store original amount in dollars
             'currency': currency,
             'product_name': f'Travel Insurance - {policy_name}',
             'created_at': datetime.utcnow().isoformat(),
             'updated_at': datetime.utcnow().isoformat()
         }
         
+        # Store payment record (DynamoDB or in-memory)
         try:
             if self.payments_table:
                 self.payments_table.put_item(Item=payment_record)
                 logger.info(f"Payment record created: {payment_intent_id}")
+            elif self.use_in_memory:
+                self.in_memory_payments[payment_intent_id] = payment_record
+                logger.info(f"Payment record stored in-memory: {payment_intent_id}")
         except Exception as e:
             logger.error(f"Failed to create payment record: {e}")
-            return {
-                "success": False,
-                "error": f"DynamoDB error: {str(e)}"
-            }
+            # Don't fail payment creation just because of DB error
+            logger.warning("Continuing with payment despite storage error")
         
         # Create Stripe checkout session
         try:
@@ -84,7 +102,7 @@ class PaymentHandler:
                 line_items=[{
                     'price_data': {
                         'currency': currency.lower(),
-                        'unit_amount': amount,
+                        'unit_amount': amount_in_cents,  # Use cents for Stripe
                         'product_data': {
                             'name': f'Travel Insurance - {policy_name}',
                             'description': f'Insurance policy for quote {quote_id}',
@@ -119,23 +137,25 @@ class PaymentHandler:
                 "stripe_session_id": checkout_session.id,
                 "payment_url": checkout_session.url,
                 "status": "pending",
-                "amount": amount,
+                "amount": amount_in_dollars,  # Return original amount in dollars
                 "currency": currency,
                 "message": f"Payment link created. Status will update automatically after payment."
             }
         
         except Exception as e:
             logger.error(f"Stripe session creation failed: {e}")
-            # Update payment record to failed
-            if self.payments_table:
-                try:
+                # Update payment record to failed
+            try:
+                if self.payments_table:
                     self.payments_table.update_item(
                         Key={'payment_intent_id': payment_intent_id},
                         UpdateExpression='SET payment_status = :status',
                         ExpressionAttributeValues={':status': 'failed'}
                     )
-                except:
-                    pass
+                elif self.use_in_memory and payment_intent_id in self.in_memory_payments:
+                    self.in_memory_payments[payment_intent_id]['payment_status'] = 'failed'
+            except:
+                pass
             
             return {
                 "success": False,
@@ -143,26 +163,25 @@ class PaymentHandler:
             }
     
     async def check_payment_status(self, payment_id: str) -> Dict:
-        """Check payment status from DynamoDB"""
+        """Check payment status from DynamoDB or in-memory"""
         
         try:
-            if not self.payments_table:
-                return {
-                    "success": False,
-                    "error": "DynamoDB not available"
-                }
+            payment_record = None
             
-            response = self.payments_table.get_item(
-                Key={'payment_intent_id': payment_id}
-            )
+            if self.payments_table:
+                response = self.payments_table.get_item(
+                    Key={'payment_intent_id': payment_id}
+                )
+                if 'Item' in response:
+                    payment_record = response['Item']
+            elif self.use_in_memory and payment_id in self.in_memory_payments:
+                payment_record = self.in_memory_payments[payment_id]
             
-            if 'Item' not in response:
+            if not payment_record:
                 return {
                     "success": False,
                     "error": "Payment record not found"
                 }
-            
-            payment_record = response['Item']
             
             # Also check Stripe status if session exists
             stripe_status = None

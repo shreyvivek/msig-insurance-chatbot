@@ -174,6 +174,7 @@ function PurchaseForm({ quote, quoteId, tripDetails, isOpen, onClose, onComplete
   const [travelers, setTravelers] = useState<Array<{ name: string; age: number; email: string; phone: string; dob: string }>>([])
   const [currentTraveler, setCurrentTraveler] = useState({ name: '', age: 0, email: '', phone: '', dob: '' })
   const [paymentInfo, setPaymentInfo] = useState({ cardNumber: '', expiryDate: '', cvv: '', cardName: '' })
+  const [isAutoFilling, setIsAutoFilling] = useState(false)
 
   useEffect(() => {
     if (!isOpen) {
@@ -310,6 +311,62 @@ function PurchaseForm({ quote, quoteId, tripDetails, isOpen, onClose, onComplete
     }
   }
 
+  const handleAutoFill = async () => {
+    setIsAutoFilling(true)
+    
+    // Simulate AI auto-fill with animation
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+    
+    // Auto-fill travelers with smart defaults
+    const autoTravelers = travelers.map((t, idx) => {
+      // Use extracted data if available, otherwise smart defaults
+      const extractedName = tripDetails?.travelers?.[idx]?.name
+      const extractedAge = tripDetails?.travelers?.[idx]?.age || tripDetails?.ages?.[idx]
+      
+      return {
+        name: extractedName || `Traveler ${idx + 1}`,
+        age: extractedAge || (idx === 0 ? 35 : 32),
+        email: extractedName ? `${extractedName.toLowerCase().replace(/\s+/g, '.')}@example.com` : `traveler${idx + 1}@example.com`,
+        phone: `+65 9123 ${4567 + idx}`,
+        dob: ''
+      }
+    })
+    
+    // Animate filling each traveler
+    for (let i = 0; i < autoTravelers.length; i++) {
+      setStep(i + 1)
+      await delay(300)
+      setCurrentTraveler(autoTravelers[i])
+      await delay(500)
+      
+      // Auto-proceed to next
+      if (i < autoTravelers.length - 1) {
+        const updated = [...travelers]
+        updated[i] = autoTravelers[i]
+        setTravelers(updated)
+      }
+    }
+    
+    // Fill all travelers
+    setTravelers(autoTravelers)
+    await delay(300)
+    
+    // Move to payment
+    setStep(autoTravelers.length + 1)
+    await delay(200)
+    
+    // Auto-fill payment (test card)
+    setPaymentInfo({
+      cardName: autoTravelers[0]?.name || 'John Doe',
+      cardNumber: '4242424242424242',
+      expiryDate: '12/25',
+      cvv: '123'
+    })
+    
+    await delay(500)
+    setIsAutoFilling(false)
+  }
+
   if (!isOpen) return null
 
   const cleanedName = cleanPolicyName(quote.plan_name)
@@ -339,9 +396,28 @@ function PurchaseForm({ quote, quoteId, tripDetails, isOpen, onClose, onComplete
             <h2 className="text-xl font-bold text-white">Purchase: {cleanedName}</h2>
             <p className="text-sm text-white/80">Step {step} of {numTravelers > travelers.length ? numTravelers + 1 : numTravelers}</p>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
-            <X className="w-5 h-5 text-white" />
-          </button>
+          <div className="flex items-center gap-2">
+            {!isAutoFilling && (
+              <button 
+                onClick={handleAutoFill}
+                className="px-3 py-1.5 bg-white/20 hover:bg-white/30 border border-white/30 rounded-lg transition-all text-white text-xs font-semibold flex items-center gap-1.5 backdrop-blur-sm"
+              >
+                <Sparkles className="w-3 h-3" />
+                AI Auto-Fill
+              </button>
+            )}
+            {isAutoFilling && (
+              <div className="px-3 py-1.5 bg-yellow-500/20 border border-yellow-500/30 rounded-lg text-white text-xs font-semibold flex items-center gap-1.5">
+                <div className="animate-spin">
+                  <Sparkles className="w-3 h-3" />
+                </div>
+                Auto-filling...
+              </div>
+            )}
+            <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
+              <X className="w-5 h-5 text-white" />
+            </button>
+          </div>
         </div>
 
         <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
@@ -848,6 +924,7 @@ interface Message {
   content: string
   timestamp: Date
   booking_links?: Array<{ type: string; platform: string; url: string; text: string }>
+  suggested_questions?: Array<{ question: string; icon: string; priority: string }>
   quotes?: Array<{ plan_name: string; price: number; currency: string; recommended_for: string; source?: string; offer_id?: string; product_code?: string; score?: number; benefits?: string[]; reasons?: string[]; cost_source?: string }>
   quote_id?: string
   trip_details?: any
@@ -1147,6 +1224,7 @@ export default function Home() {
         content: finalContent,
         timestamp: new Date(),
         booking_links: data.booking_links || [],
+        suggested_questions: data.suggested_questions || [],
         quotes: data.quotes || [],
         quote_id: data.quote_id || null,
         trip_details: data.trip_details || null
@@ -1915,6 +1993,78 @@ export default function Home() {
                                   <ExternalLink className="w-4 h-4" />
                                   <span>{link.text}</span>
                                 </a>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Suggested Questions - Clickable Buttons */}
+                        {message.suggested_questions && message.suggested_questions.length > 0 && (
+                          <div className="mt-4 pt-4 border-t border-gray-700/50">
+                            <p className="text-xs text-gray-400 mb-3 font-medium">Suggested questions:</p>
+                            <div className="flex flex-wrap gap-2">
+                              {message.suggested_questions.map((sq: any, i: number) => (
+                                <button
+                                  key={i}
+                                  onClick={async () => {
+                                    if (isLoading) return
+                                    
+                                    const userMsg: Message = {
+                                      role: 'user',
+                                      content: sq.question,
+                                      timestamp: new Date()
+                                    }
+                                    setMessages(prev => [...prev, userMsg])
+                                    setIsLoading(true)
+                                    setInput('')
+                                    
+                                    try {
+                                      const response = await fetch(`${API_URL}/api/ask`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                          question: sq.question,
+                                          language: language,
+                                          user_id: userData?.user_id || 'default_user',
+                                          is_voice: false,
+                                          context_data: {
+                                            user_data: userData
+                                          }
+                                        })
+                                      })
+                                      
+                                      const data = await response.json()
+                                      const answerText = data.answer || data.message || data.content || 'I apologize, but I encountered an error.'
+                                      
+                                      const assistantMsg: Message = {
+                                        role: 'assistant',
+                                        content: answerText,
+                                        timestamp: new Date(),
+                                        booking_links: data.booking_links || [],
+                                        suggested_questions: data.suggested_questions || [],
+                                        quotes: data.quotes || [],
+                                        quote_id: data.quote_id || null,
+                                        trip_details: data.trip_details || null
+                                      }
+                                      
+                                      setMessages(prev => [...prev, assistantMsg])
+                                    } catch (error) {
+                                      console.error('Error:', error)
+                                      setMessages(prev => [...prev, {
+                                        role: 'assistant',
+                                        content: '⚠️ **Error**\n\n• I encountered an error processing your request\n• Please try again',
+                                        timestamp: new Date()
+                                      }])
+                                    } finally {
+                                      setIsLoading(false)
+                                    }
+                                  }}
+                                  disabled={isLoading}
+                                  className="inline-flex items-center gap-2 px-3 py-2 bg-gray-700/50 hover:bg-gray-700 border border-gray-600/50 rounded-lg text-gray-200 text-xs font-medium transition-all hover:scale-105 hover:border-blue-500/50 group disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  <span className="text-base">{sq.icon}</span>
+                                  <span>{sq.question}</span>
+                                </button>
                               ))}
                             </div>
                           </div>

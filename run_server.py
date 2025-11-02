@@ -505,6 +505,26 @@ CRITICAL INSTRUCTION:
             
             return result
     
+    # Check for specific questions that need policy intelligence
+    question_lower_check = question_lower
+    needs_policy_details = any(word in question_lower_check for word in ["cancel", "cancellation", "refund", "premium", "price", "cost", "fee"])
+    
+    # For cancellation/premium questions, enhance context with policy details
+    if needs_policy_details:
+        try:
+            policy_details_context = ""
+            for policy_name in ["TravelEasy Policy QTD032212", "Scootsurance QSR022206_updated", "TravelEasy Pre-Ex Policy QTD032212-PX"]:
+                if policy_name.lower().replace(" ", "").replace("-", "") in question_lower_check or "any" in question_lower_check or "all" in question_lower_check:
+                    # Get policy text for reference
+                    policy_text = policy_intel.get_policy_text(policy_name)
+                    if policy_text:
+                        policy_details_context += f"\n\n[{policy_name} Policy Text Available - {len(policy_text)} characters]\n"
+            
+            if policy_details_context:
+                enhanced_context = enhanced_context + "\n\nPOLICY DETAILS AVAILABLE FOR REFERENCE:\n" + policy_details_context
+        except Exception as e:
+            logger.error(f"Failed to add policy details context: {e}")
+    
     # Normal conversation flow (with enhanced context if claims data available)
     result = await conversation.handle_question(
         question=request.get("question"),

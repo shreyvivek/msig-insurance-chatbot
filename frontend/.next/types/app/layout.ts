@@ -1,4 +1,4 @@
-// File: /Users/shreyv/Documents/GitHub/msig-insurance-chatbot/frontend/app/layout.tsx
+// File: /Users/racshanyaa/Documents/GitHub/msig-insurance-chatbot/frontend/app/layout.tsx
 import * as entry from '../../../app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

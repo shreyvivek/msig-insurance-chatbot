@@ -295,10 +295,19 @@ CRITICAL INSTRUCTIONS FOR PERSONALIZED, EMPATHETIC RESPONSES:
 7. **Format policy names in bold**: **TravelEasy**, **Scootsurance**, **MSIG**
 8. **Include citations**: **[Policy: Name, Section]** when referencing policy details
 9. **Explain "why" and "how"** - Use SPECIFIC numbers and breakdowns, show calculations
-10. **Avoid repetitive phrases** - Don't say "I understand your concern" in every response
-11. **Match their tone** - If they're casual, be casual. If formal, be professional
-12. **Show you remember them** - Reference past conversations or preferences if available
+10. **Explain premium differences** - If asked about pricing, explain WHY different policies cost differently (coverage levels, deductibles, features)
+11. **Cancellation questions** - Use policy intelligence to fetch exact cancellation rules from policy documents
+12. **Avoid repetitive phrases** - Don't say "I understand your concern" in every response
+13. **Match their tone** - If they're casual, be casual. If formal, be professional
+14. **Show you remember them** - Reference past conversations or preferences if available
 {claims_data_instruction}
+
+PREMIUM EXPLANATIONS - When answering pricing/cost questions:
+- Scootsurance (Product A): Budget-friendly, lower premiums, basic coverage
+- TravelEasy (Product B): Standard pricing, balanced coverage
+- TravelEasy Pre-Ex (Product C): Higher premiums due to pre-existing condition coverage and enhanced benefits
+
+Use actual policy text to explain cancellation rules, not generic answers.
 
 EXAMPLES OF WHAT NOT TO DO:
 ❌ "I understand your concern about..."
@@ -405,11 +414,18 @@ Remember: Be a travel buddy who genuinely cares about THEIR trip, not a generic 
             # Clean up image tags from text
             cleaned_answer = re.sub(r'\[IMAGE:[^\]]+\]', '', formatted_answer).strip()
             
+            # Generate smart suggested questions/buttons
+            suggested_questions = self._generate_suggested_questions(
+                question, is_insurance_question, has_claims_data, 
+                user_memory, sentiment, language
+            )
+            
             return {
                 "answer": cleaned_answer,
                 "content": cleaned_answer,  # Alias for frontend compatibility
                 "message": cleaned_answer,  # Alias for frontend compatibility
                 "booking_links": booking_links,
+                "suggested_questions": suggested_questions,  # NEW: Clickable buttons
                 "quotes": [],  # Will be populated by /api/ask if Ancileo policies are fetched
                 "quote_id": None,
                 "trip_details": None,
@@ -541,6 +557,79 @@ Remember: Be a travel buddy who genuinely cares about THEIR trip, not a generic 
         
         question_lower = question.lower()
         return any(keyword in question_lower for keyword in travel_keywords)
+    
+    def _generate_suggested_questions(
+        self, current_question: str, is_insurance: bool, 
+        has_claims: bool, user_memory: Dict, sentiment: str, 
+        language: str
+    ) -> List[Dict]:
+        """Generate suggested questions as clickable buttons"""
+        suggestions = []
+        
+        # For insurance questions, suggest follow-ups
+        if is_insurance:
+            # Policy-specific questions
+            if "cover" in current_question.lower() or "does" in current_question.lower():
+                suggestions.append({
+                    "question": "What are the coverage limits?",
+                    "icon": "🛡️",
+                    "priority": "high"
+                })
+                suggestions.append({
+                    "question": "What's excluded from coverage?",
+                    "icon": "🚫",
+                    "priority": "medium"
+                })
+            
+            # Cancellation-related
+            if any(word in current_question.lower() for word in ["cancel", "refund", "change"]):
+                suggestions.append({
+                    "question": "Can I cancel anytime?",
+                    "icon": "❌",
+                    "priority": "high"
+                })
+                suggestions.append({
+                    "question": "Is there a cancellation fee?",
+                    "icon": "💰",
+                    "priority": "medium"
+                })
+            
+            # Claims-related
+            if has_claims:
+                suggestions.append({
+                    "question": "How do I file a claim?",
+                    "icon": "📋",
+                    "priority": "high"
+                })
+            
+            # General comparisons
+            suggestions.append({
+                "question": "Compare all policies side-by-side",
+                "icon": "⚖️",
+                "priority": "medium"
+            })
+            
+        # For general questions, suggest insurance info
+        else:
+            suggestions.append({
+                "question": "What travel insurance do I need?",
+                "icon": "🛡️",
+                "priority": "medium"
+            })
+            
+            if user_memory.get("trip_details"):
+                suggestions.append({
+                    "question": "Get insurance for my trip",
+                    "icon": "✈️",
+                    "priority": "high"
+                })
+        
+        # Language-specific formatting
+        if language != "en":
+            # Could translate here if needed
+            pass
+        
+        return suggestions[:4]  # Max 4 suggestions
     
     def _is_insurance_question(self, question: str) -> bool:
         """Detect if question is specifically about insurance/policies"""

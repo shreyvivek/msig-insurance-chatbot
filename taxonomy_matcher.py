@@ -222,6 +222,48 @@ class TaxonomyMatcher:
             score -= 10
             reasons.append(f"Trip duration may exceed policy limits")
         
+        # 6. DIFFERENTIATE POLICIES - Add unique scoring factors
+        # Product A (Scootsurance) - Budget-friendly, basic coverage
+        if product == "Product A":
+            if not has_medical and age < 65:  # Good for healthy younger travelers
+                score += 10
+                benefits.append("Best value for basic coverage")
+                reasons.append("Ideal for budget-conscious travelers")
+            else:
+                score -= 5
+        
+        # Product B (TravelEasy) - Standard comprehensive coverage
+        elif product == "Product B":
+            score += 5  # Always slightly better for standard travel
+            benefits.append("Comprehensive standard coverage")
+            reasons.append("Balanced coverage and price")
+            
+        # Product C (TravelEasy Pre-Ex) - Pre-existing conditions coverage
+        elif product == "Product C":
+            if has_medical or age >= 65:  # Perfect for medical conditions or seniors
+                score += 15
+                benefits.append("Pre-existing conditions covered")
+                reasons.append("Best for travelers with medical conditions")
+            elif has_adventure:  # Also good for adventure travel
+                score += 8
+                benefits.append("Enhanced coverage for adventures")
+                reasons.append("Great for adventure activities")
+            else:
+                score -= 5  # Overkill if no special needs
+        
+        # 7. Add variation based on pax and duration for uniqueness
+        if duration_days > 14:
+            if product == "Product C":
+                score += 5  # Better for longer trips
+                benefits.append("Extended coverage benefits")
+        elif duration_days < 7:
+            if product == "Product A":
+                score += 3  # Good for short trips
+        
+        if pax > 2:
+            if product == "Product B":
+                score += 3  # Good for families
+        
         # Ensure score is between 0-100
         score = max(0, min(100, score))
         
