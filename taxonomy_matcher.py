@@ -22,9 +22,9 @@ class TaxonomyMatcher:
         self.policy_dir = Path(__file__).parent / "Policy_Wordings"
         self.taxonomy = {}
         self.policy_mapping = {
-            "Product A": "Scootsurance QSR022206_updated",
-            "Product B": "TravelEasy Policy QTD032212",
-            "Product C": "TravelEasy Pre-Ex Policy QTD032212-PX"
+            "Product A": "INTERNATIONAL TRAVEL",
+            "Product B": "MHInsure Travel",
+            "Product C": "Scootsurance"
         }
         self._load_taxonomy()
     
@@ -223,33 +223,33 @@ class TaxonomyMatcher:
             reasons.append(f"Trip duration may exceed policy limits")
         
         # 6. DIFFERENTIATE POLICIES - Add unique scoring factors
-        # Product A (Scootsurance) - Budget-friendly, basic coverage
+        # Product A (INTERNATIONAL TRAVEL) - International travel coverage
         if product == "Product A":
             if not has_medical and age < 65:  # Good for healthy younger travelers
                 score += 10
-                benefits.append("Best value for basic coverage")
-                reasons.append("Ideal for budget-conscious travelers")
+                benefits.append("Best value for international travel")
+                reasons.append("Ideal for international destinations")
             else:
                 score -= 5
         
-        # Product B (TravelEasy) - Standard comprehensive coverage
+        # Product B (MHInsure Travel) - Standard comprehensive coverage
         elif product == "Product B":
             score += 5  # Always slightly better for standard travel
             benefits.append("Comprehensive standard coverage")
             reasons.append("Balanced coverage and price")
             
-        # Product C (TravelEasy Pre-Ex) - Pre-existing conditions coverage
+        # Product C (Scootsurance) - Premium coverage
         elif product == "Product C":
-            if has_medical or age >= 65:  # Perfect for medical conditions or seniors
+            if has_medical or age >= 65:  # Good for various needs
                 score += 15
-                benefits.append("Pre-existing conditions covered")
-                reasons.append("Best for travelers with medical conditions")
+                benefits.append("Premium coverage options")
+                reasons.append("Comprehensive protection")
             elif has_adventure:  # Also good for adventure travel
                 score += 8
                 benefits.append("Enhanced coverage for adventures")
                 reasons.append("Great for adventure activities")
             else:
-                score -= 5  # Overkill if no special needs
+                score -= 5  # May be overkill if no special needs
         
         # 7. Add variation based on pax and duration for uniqueness
         if duration_days > 14:
@@ -258,11 +258,11 @@ class TaxonomyMatcher:
                 benefits.append("Extended coverage benefits")
         elif duration_days < 7:
             if product == "Product A":
-                score += 3  # Good for short trips
+                score += 3  # Good for short international trips
         
         if pax > 2:
             if product == "Product B":
-                score += 3  # Good for families
+                score += 3  # Good for families/groups
         
         # Ensure score is between 0-100
         score = max(0, min(100, score))
@@ -305,9 +305,9 @@ class TaxonomyMatcher:
                 
                 return {"covered": False}
         
-        # Product C (TravelEasy Pre-Ex) specifically covers pre-existing
+        # Product C (Scootsurance) may cover pre-existing depending on policy
         if product == "Product C":
-            return {"covered": True}
+            return {"covered": True}  # Check policy for specific terms
         
         return {"covered": False}
     

@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react'
-import { Send, Mic, Volume2, Sparkles, Plane, Upload, X, History, ChevronLeft, ExternalLink, ShoppingCart, User, CreditCard, Mail, Phone, Calendar, Globe, MessageSquarePlus } from 'lucide-react'
+import { Send, Mic, Volume2, Sparkles, Plane, Upload, X, History, ChevronLeft, ExternalLink, ShoppingCart, User, CreditCard, Mail, Phone, Calendar, MessageSquarePlus, Trash2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import UserOnboarding from '../components/UserOnboarding'
 
@@ -284,8 +284,13 @@ function PolicyCard({ policyName, onClick, isAncileo, source }: {
       return 'from-purple-600 to-pink-600 shadow-purple-500/20 hover:shadow-purple-500/40'
     }
     const lowerName = name.toLowerCase();
-    if (lowerName.includes('traveleasy')) {
+    // Removed TravelEasy - doesn't exist in Policy_Wordings
+    // Only these policies exist: INTERNATIONAL TRAVEL, MHInsure Travel, Scootsurance
+    if (lowerName.includes('international travel') || lowerName.includes('msig')) {
       return 'from-blue-500 to-cyan-500 shadow-blue-500/20 hover:shadow-blue-500/40'
+    }
+    if (lowerName.includes('mhinsure')) {
+      return 'from-emerald-500 to-teal-500 shadow-emerald-500/20 hover:shadow-emerald-500/40'
     }
     if (lowerName.includes('scootsurance')) {
       return 'from-purple-500 to-pink-500 shadow-purple-500/20 hover:shadow-purple-500/40'
@@ -924,7 +929,7 @@ function EnhancedMarkdown({ content, quotes, language = 'en' }: { content: strin
   const t = translations[language as keyof typeof translations] || translations.en
   
   // Extract policy mentions from text content (local policies) - only if content actually mentions policies
-  const policyRegex = /(TravelEasy|Scootsurance|MSIG|Policy:\s*[^\]]+)/gi
+  const policyRegex = /(INTERNATIONAL TRAVEL|MHInsure Travel|Scootsurance|MSIG|Policy:\s*[^\]]+)/gi
   const textPolicies = Array.from(new Set(
     (content.match(policyRegex)?.map(m => cleanPolicyName(m.replace(/Policy:\s*/i, '').trim())) || [])
       .filter(Boolean)
@@ -977,7 +982,7 @@ function EnhancedMarkdown({ content, quotes, language = 'en' }: { content: strin
           ),
           strong: ({ children }) => {
             const text = String(children)
-            const policyMatch = text.match(/(TravelEasy|Scootsurance|MSIG|Policy:?\s*[^\]\s]+)/i)
+            const policyMatch = text.match(/(INTERNATIONAL TRAVEL|MHInsure Travel|Scootsurance|MSIG|Policy:?\s*[^\]\s]+)/i)
             
             if (policyMatch) {
               const policyName = policyMatch[1].replace(/Policy:\s*/i, '').trim()
@@ -1226,12 +1231,15 @@ export default function Home() {
   const [showHistory, setShowHistory] = useState(true)
   const [conversationThreads, setConversationThreads] = useState<ConversationThread[]>([])
   const [currentThreadId, setCurrentThreadId] = useState<string>('default')
-  const [showLanguageMenu, setShowLanguageMenu] = useState(false)
-  const [showOnboarding, setShowOnboarding] = useState(false)
+  // Removed manual language selector - using Google Translate only
+  // FORCE onboarding to show by default - will only hide if data is 100% complete
+  const [showOnboarding, setShowOnboarding] = useState(true)
   const [userData, setUserData] = useState<any>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const recognitionRef = useRef<any>(null)
+  const onboardingCheckedRef = useRef<boolean>(false) // Track if we've already checked
+  // Auto-detect API URL - try 8002 first (backend default), fallback to 8003, then 8004
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002'
   
   // Language options
@@ -1322,28 +1330,102 @@ export default function Home() {
     scrollToBottom()
   }, [messages])
 
-  // Initialize greeting only once on mount
+  // Initialize greeting only once on mount, but only if onboarding is not active
   useEffect(() => {
-    initializeGreeting()
+    // Wait a bit to ensure onboarding check has run first
+    const timer = setTimeout(() => {
+      if (!showOnboarding) {
+        initializeGreeting()
+      }
+    }, 200)
+    
+    return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [showOnboarding])
   
-  // Check if onboarding is needed (first visit)
+  // Check onboarding status ONCE on mount - use ref to prevent multiple checks
   useEffect(() => {
+    // Only check once
+    if (onboardingCheckedRef.current) {
+      console.log('⏭️ Skipping onboarding check - already checked')
+      return
+    }
+    
+    onboardingCheckedRef.current = true
+    console.log('🔍 Onboarding check on mount (FIRST TIME ONLY)...')
+    
     const hasOnboarded = localStorage.getItem('wandersure_onboarded')
     const savedUserData = localStorage.getItem('wandersure_user_data')
     
-    if (hasOnboarded && savedUserData) {
+    console.log('🔍 Found in localStorage:', { hasOnboarded, hasUserData: !!savedUserData })
+    
+    // ONLY hide if we have BOTH flag AND complete valid data
+    if (hasOnboarded === 'true' && savedUserData) {
       try {
-        setUserData(JSON.parse(savedUserData))
-        setShowOnboarding(false)
+        const parsed = JSON.parse(savedUserData)
+        console.log('🔍 Parsed data:', parsed)
+        
+        // EXTREMELY STRICT: age must be number 1-120, interests must be array with items
+        const hasValidAge = parsed.age && typeof parsed.age === 'number' && parsed.age > 0 && parsed.age <= 120
+        const hasValidInterests = Array.isArray(parsed.interests) && parsed.interests.length > 0
+        
+        console.log('🔍 Validation:', { hasValidAge, hasValidInterests, age: parsed.age, ageType: typeof parsed.age, interests: parsed.interests })
+        
+        if (hasValidAge && hasValidInterests) {
+          // Data is 100% complete - hide onboarding
+          setUserData(parsed)
+          setShowOnboarding(false)
+          console.log('✅ Hiding onboarding - data is complete')
+        } else {
+          // Data incomplete - FORCE show onboarding and clear invalid flag
+          localStorage.removeItem('wandersure_onboarded')
+          setShowOnboarding(true)
+          console.log('⚠️ FORCE showing onboarding - data incomplete, cleared flag')
+        }
       } catch (e) {
+        // Invalid data - FORCE show onboarding and clear everything
+        localStorage.removeItem('wandersure_onboarded')
+        localStorage.removeItem('wandersure_user_data')
+        setShowOnboarding(true)
+        console.log('⚠️ FORCE showing onboarding - parse error, cleared storage:', e)
+      }
+    } else {
+      // No data - FORCE show onboarding
+      setShowOnboarding(true)
+      console.log('⚠️ FORCE showing onboarding - no data found')
+    }
+  }, []) // Run ONLY once on mount
+  
+  // Watch for any attempts to hide onboarding incorrectly
+  useEffect(() => {
+    // If onboarding is hidden, verify it should be
+    if (!showOnboarding) {
+      const hasOnboarded = localStorage.getItem('wandersure_onboarded')
+      const savedUserData = localStorage.getItem('wandersure_user_data')
+      
+      // If missing data, force show
+      if (!hasOnboarded || !savedUserData) {
+        console.log('🔧 RE-SHOWING onboarding - data missing')
+        setShowOnboarding(true)
+        return
+      }
+      
+      // Validate data
+      try {
+        const parsed = JSON.parse(savedUserData)
+        const hasValidAge = parsed.age && typeof parsed.age === 'number' && parsed.age > 0 && parsed.age <= 120
+        const hasValidInterests = Array.isArray(parsed.interests) && parsed.interests.length > 0
+        
+        if (!hasValidAge || !hasValidInterests) {
+          console.log('🔧 RE-SHOWING onboarding - invalid data')
+          setShowOnboarding(true)
+        }
+      } catch (e) {
+        console.log('🔧 RE-SHOWING onboarding - parse error')
         setShowOnboarding(true)
       }
-    } else if (!hasOnboarded) {
-      setShowOnboarding(true)
     }
-  }, [])
+  }, [showOnboarding])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -1363,15 +1445,61 @@ export default function Home() {
   }
   
   const handleSkipOnboarding = () => {
-    setShowOnboarding(false)
-    localStorage.setItem('wandersure_onboarded', 'true')
-    
-    const welcomeMsg: Message = {
-      role: 'assistant',
-      content: `🎉 **Welcome to WanderSure!**\n\nI'm here to help you find the perfect travel insurance. Upload your travel itinerary to get started!`,
-      timestamp: new Date()
+    // Don't allow skipping - user must complete onboarding
+    // Show alert to guide them
+    alert('Please complete the onboarding to get personalized recommendations. You can select "None" for medical conditions if you don\'t have any.')
+    // Keep modal open - don't hide it
+  }
+
+  // Clear all chat history
+  const clearChatHistory = () => {
+    if (window.confirm('Are you sure you want to delete all chat history? This action cannot be undone.')) {
+      setConversationThreads([])
+      localStorage.removeItem('wandersure_conversation_threads')
+      // Also clear all thread messages
+      const keys = Object.keys(localStorage)
+      keys.forEach(key => {
+        if (key.startsWith('wandersure_thread_')) {
+          localStorage.removeItem(key)
+        }
+      })
+      // Reset to default thread
+      setCurrentThreadId('default')
+      setMessages([])
+      initializeGreeting()
     }
-    setMessages([welcomeMsg])
+  }
+
+  // Load conversation thread
+  const loadThread = (threadId: string) => {
+    // Save current messages before switching
+    if (messages.length > 0 && currentThreadId) {
+      localStorage.setItem(`wandersure_thread_${currentThreadId}`, JSON.stringify(
+        messages.map(m => ({ ...m, timestamp: m.timestamp.toISOString() }))
+      ))
+    }
+    
+    setCurrentThreadId(threadId)
+    
+    // Load messages from localStorage
+    const savedMessages = localStorage.getItem(`wandersure_thread_${threadId}`)
+    if (savedMessages) {
+      try {
+        const parsed = JSON.parse(savedMessages)
+        setMessages(parsed.map((m: any) => ({
+          ...m,
+          timestamp: new Date(m.timestamp)
+        })))
+      } catch (e) {
+        console.error('Failed to load thread messages:', e)
+        setMessages([])
+        initializeGreeting()
+      }
+    } else {
+      // If no saved messages, start fresh
+      setMessages([])
+      initializeGreeting()
+    }
   }
   
   // Create new chat
@@ -1399,11 +1527,28 @@ export default function Home() {
       localStorage.setItem('wandersure_conversation_threads', JSON.stringify(threads))
     }
     
+    // Save current messages before switching
+    if (messages.length > 0 && currentThreadId) {
+      localStorage.setItem(`wandersure_thread_${currentThreadId}`, JSON.stringify(
+        messages.map(m => ({ ...m, timestamp: m.timestamp.toISOString() }))
+      ))
+    }
+    
     // Reset for new chat
     setMessages([])
-    setCurrentThreadId(`thread_${Date.now()}`)
+    const newThreadId = `thread_${Date.now()}`
+    setCurrentThreadId(newThreadId)
     initializeGreeting()
   }
+
+  // Save messages to localStorage when they change
+  useEffect(() => {
+    if (messages.length > 0 && currentThreadId && currentThreadId !== 'default') {
+      localStorage.setItem(`wandersure_thread_${currentThreadId}`, JSON.stringify(
+        messages.map(m => ({ ...m, timestamp: m.timestamp.toISOString() }))
+      ))
+    }
+  }, [messages, currentThreadId])
   
   // Google Translate handles everything - no custom translation needed
   useEffect(() => {
@@ -1435,6 +1580,12 @@ export default function Home() {
   }, [])
 
   const initializeGreeting = async () => {
+    // Don't show greeting if onboarding is active - wait for user to complete onboarding
+    if (showOnboarding) {
+      console.log('⏸️ Greeting skipped - onboarding is active')
+      return
+    }
+    
     // Set initial greeting immediately so user sees something
     if (messages.length === 0) {
       setMessages([{
@@ -1545,11 +1696,22 @@ export default function Home() {
       if (isSpeaking) {
         speakText(answerText)
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error:', error)
+      
+      // Provide helpful error messages based on error type
+      let errorContent = ''
+      if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
+        errorContent = '**🌐 Connection Issue**\n\n• I\'m having trouble connecting to the server\n• Please check your internet connection\n• The server might be restarting - try again in a moment'
+      } else if (error.message?.includes('status') || error.message?.includes('HTTP')) {
+        errorContent = '**⚠️ Server Error**\n\n• The server is experiencing issues\n• This is usually temporary\n• Please try again in a moment, or try rephrasing your question'
+      } else {
+        errorContent = '**😅 Oops!**\n\n• I encountered an issue processing your question\n• But don\'t worry - I\'m here to help!\n\n**Try:**\n• Rephrasing your question\n• Asking something simpler like "What can you help me with?"\n• Or just say "hi" to start fresh'
+      }
+      
       const errorMessage: Message = {
         role: 'assistant',
-        content: '⚠️ **Error**\n\n• I encountered an error processing your request\n• Please try again',
+        content: errorContent,
         timestamp: new Date()
       }
       setMessages(prev => [...prev, errorMessage])
@@ -1562,22 +1724,95 @@ export default function Home() {
     setIsUploading(true)
     setUploadedFile(file)
     
+    // First, test server connection
+    console.log('🔍 Testing server connection...')
+    try {
+      const testHealth = await fetch('http://localhost:8002/health', {
+        method: 'GET',
+        signal: AbortSignal.timeout(5000)
+      })
+      if (testHealth.ok) {
+        console.log('✅ Server connection test passed!')
+      } else {
+        console.warn('⚠️ Server health check returned non-OK status:', testHealth.status)
+      }
+    } catch (testError: any) {
+      console.error('❌ Server connection test failed:', testError.message)
+      // Don't fail here, continue to try extract
+    }
+    
     const reader = new FileReader()
     reader.onload = async (e) => {
       const base64 = e.target?.result as string
       
       try {
-        const extractResponse = await fetch(`${API_URL}/api/extract`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            document_data: base64,
-            document_type: file.type.includes('pdf') ? 'pdf' : file.type.includes('image') ? 'image' : 'text'
-          })
-        })
+        // Try both ports if default fails
+        let extractResponse: Response | undefined
+        let lastError: any = null
+        
+        const portsToTry = [8002, 8003, 8004]
+        let triedPorts: number[] = []
+        
+        for (const port of portsToTry) {
+          const testUrl = `http://localhost:${port}`
+          triedPorts.push(port)
+          
+          try {
+            console.log(`🔌 Attempting connection to ${testUrl}/api/extract`)
+            
+            // First verify server is reachable with a quick health check
+            try {
+              const healthResponse = await fetch(`${testUrl}/health`, {
+                method: 'GET',
+                signal: AbortSignal.timeout(3000)
+              })
+              if (!healthResponse.ok) {
+                console.log(`⚠️ Health check failed for port ${port}, trying next...`)
+                continue
+              }
+              console.log(`✅ Health check passed for port ${port}`)
+            } catch (healthError: any) {
+              console.log(`⚠️ Health check error for port ${port}:`, healthError.message)
+              continue
+            }
+            
+            // Server is reachable, try the extract endpoint
+            console.log(`📤 Sending extract request to port ${port}...`)
+            extractResponse = await fetch(`${testUrl}/api/extract`, {
+              method: 'POST',
+              headers: { 
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+              },
+              body: JSON.stringify({
+                document_data: base64,
+                document_type: file.type.includes('pdf') ? 'pdf' : file.type.includes('image') ? 'image' : 'text'
+              }),
+              signal: AbortSignal.timeout(60000) // 60 second timeout for document processing
+            })
+            
+            console.log(`✅ Successfully connected to port ${port}! Status: ${extractResponse.status}`)
+            break
+            
+          } catch (fetchError: any) {
+            lastError = fetchError
+            console.error(`❌ Port ${port} connection failed:`, {
+              message: fetchError.message,
+              name: fetchError.name,
+              stack: fetchError.stack?.substring(0, 200)
+            })
+            continue
+          }
+        }
+        
+        if (!extractResponse) {
+          const errorDetails = lastError ? ` Last error: ${lastError.message}` : ''
+          console.error('❌ All ports failed:', triedPorts, errorDetails)
+          throw new Error(`Cannot connect to backend server on ports ${triedPorts.join(', ')}.${errorDetails} Make sure the server is running with: PORT=8002 python3 run_server.py`)
+        }
         
         if (!extractResponse.ok) {
-          throw new Error(`Extract failed: ${extractResponse.status}`)
+          throw new Error(`Extract failed: ${extractResponse.status} ${extractResponse.statusText}`)
         }
         
         const extractData = await extractResponse.json()
@@ -1587,7 +1822,11 @@ export default function Home() {
           const tripInfo = extractData.extracted_data
           const claimsData = extractData.claims_analysis
           
-          const quoteResponse = await fetch(`${API_URL}/api/quote`, {
+          // Use the working port from extract (or fallback to API_URL)
+          const workingPort = extractResponse.url.match(/localhost:(\d+)/)?.[1] || '8002'
+          const quoteUrl = `http://localhost:${workingPort}/api/quote`
+          console.log(`📤 Requesting quotes from: ${quoteUrl}`)
+          const quoteResponse = await fetch(quoteUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1655,14 +1894,64 @@ export default function Home() {
           }
           
           setMessages(prev => [...prev, successMsg])
+        } else if (extractData.extracted_data && Object.keys(extractData.extracted_data).length > 0) {
+          // Partial extraction - show what we got and ask for missing info
+          const tripInfo = extractData.extracted_data
+          const missingFields = extractData.missing_fields || []
+          const validationQuestions = extractData.validation_questions || []
+          
+          let partialMsg = `📄 **I found some information from your document!**\n\n`
+          
+          if (tripInfo.destination) partialMsg += `✅ Destination: ${tripInfo.destination}\n`
+          if (tripInfo.departure_date) partialMsg += `✅ Departure: ${tripInfo.departure_date}\n`
+          if (tripInfo.return_date) partialMsg += `✅ Return: ${tripInfo.return_date}\n`
+          if (tripInfo.pax || tripInfo.travelers?.length) partialMsg += `✅ Travelers: ${tripInfo.pax || tripInfo.travelers?.length}\n`
+          
+          if (missingFields.length > 0) {
+            partialMsg += `\n⚠️ **I need a bit more information:**\n\n`
+            validationQuestions.forEach((q: string) => {
+              partialMsg += `• ${q}\n`
+            })
+            partialMsg += `\nYou can either:\n• Upload a clearer document\n• Tell me the missing details in chat`
+          }
+          
+          const partialMsgObj: Message = {
+            role: 'assistant',
+            content: partialMsg,
+            timestamp: new Date(),
+            trip_details: tripInfo
+          }
+          setMessages(prev => [...prev, partialMsgObj])
         } else {
-          throw new Error('Failed to extract trip information')
+          // Complete failure - show helpful error
+          const errorMsg = extractData.message || extractData.error || 'Failed to extract trip information'
+          const errorMsgObj: Message = {
+            role: 'assistant',
+            content: `⚠️ **Upload Error**\n\n${errorMsg}\n\n**What you can do:**\n• Upload a clearer, higher quality image/PDF\n• Try describing your trip manually in chat\n• Make sure the document shows:\n  - Destination (city, country)\n  - Travel dates\n  - Number of travelers`,
+            timestamp: new Date()
+          }
+          setMessages(prev => [...prev, errorMsgObj])
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('File upload error:', error)
+        
+        // Check if it's a connection error
+        const isConnectionError = error.message?.includes('Failed to fetch') || 
+                                  error.message?.includes('NetworkError') || 
+                                  error.message?.includes('Cannot connect') ||
+                                  error.message?.includes('fetch') ||
+                                  error.name === 'TypeError'
+        
+        let errorContent = ''
+        if (isConnectionError) {
+          errorContent = `🔌 **Connection Error**\n\n• Cannot connect to the backend server\n• **The server might not be running!**\n\n**To fix:**\n1. Open terminal in the project folder\n2. Run: \`PORT=8002 python3 run_server.py\`\n3. Wait for "Application startup complete"\n4. Try uploading again\n\n**Or check:**\n• Is the server running? (Check terminal)\n• Is it on port 8002? (Frontend will also try 8003 and 8004)\n• Check browser console for more details`
+        } else {
+          errorContent = `⚠️ **Upload Error**\n\n• Could not process your document\n• ${error.message || 'Please try uploading a clearer document or describe your trip manually'}\n\n**Tips:**\n• Make sure the image/PDF is clear and readable\n• Try taking a better photo if it's blurry\n• You can also just tell me about your trip in chat!`
+        }
+        
         const errorMsg: Message = {
           role: 'assistant',
-          content: '⚠️ **Upload Error**\n\n• Could not extract trip information from document\n• Please try uploading a clearer document or describe your trip manually',
+          content: errorContent,
           timestamp: new Date()
         }
         setMessages(prev => [...prev, errorMsg])
@@ -1743,7 +2032,7 @@ export default function Home() {
       // Remove common special characters that shouldn't be read
       .replace(/[#@$%^&*()_+=\[\]{}|\\:";\'<>?,./`~]/g, ' ')
       // Clean policy names - remove symbols but keep readable text
-      .replace(/\b(TravelEasy|Scootsurance|MSIG)[^\s]*/gi, (match) => {
+      .replace(/\b(INTERNATIONAL TRAVEL|MHInsure Travel|Scootsurance|MSIG)[^\s]*/gi, (match) => {
         // Clean up policy names - remove trailing symbols
         return match.replace(/[#@$%^&*()_+=\[\]{}|\\:";\'<>?,./`~-]+$/g, '').trim();
       })
@@ -1929,88 +2218,99 @@ export default function Home() {
   }
 
   return (
-    <div className="h-screen bg-gray-900 text-gray-100 relative overflow-hidden">
-      {/* Animated Background */}
+    <div className="h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100 relative overflow-hidden">
+      {/* Elegant Animated Background */}
       <div className="fixed inset-0 z-0">
-        <div className="absolute top-0 left-0 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl animate-pulse-slow"></div>
-        <div className="absolute top-1/4 right-0 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl animate-pulse-slow animation-delay-2000"></div>
-        <div className="absolute bottom-0 left-1/3 w-96 h-96 bg-purple-600/20 rounded-full blur-3xl animate-pulse-slow animation-delay-4000"></div>
+        <div className="absolute top-0 left-0 w-[600px] h-[600px] bg-blue-600/10 rounded-full blur-3xl animate-pulse-slow"></div>
+        <div className="absolute top-1/4 right-0 w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-3xl animate-pulse-slow animation-delay-2000"></div>
+        <div className="absolute bottom-0 left-1/3 w-[550px] h-[550px] bg-purple-600/10 rounded-full blur-3xl animate-pulse-slow animation-delay-4000"></div>
         
-        <div className="absolute inset-0 opacity-30">
-          {[...Array(20)].map((_, i) => (
+        <div className="absolute inset-0 opacity-20">
+          {[...Array(15)].map((_, i) => (
             <div
               key={i}
-              className="absolute w-1 h-1 bg-blue-400 rounded-full animate-float"
+              className="absolute w-1.5 h-1.5 bg-blue-400/40 rounded-full animate-float"
               style={{
                 left: `${Math.random() * 100}%`,
                 top: `${Math.random() * 100}%`,
                 animationDelay: `${Math.random() * 5}s`,
-                animationDuration: `${10 + Math.random() * 10}s`
+                animationDuration: `${12 + Math.random() * 8}s`
               }}
             ></div>
           ))}
         </div>
         
         <div 
-          className="absolute inset-0 opacity-[0.02]"
+          className="absolute inset-0 opacity-[0.03]"
           style={{
             backgroundImage: `
-              linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)
+              linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)
             `,
-            backgroundSize: '50px 50px'
+            backgroundSize: '60px 60px'
           }}
         ></div>
       </div>
 
       <div className="flex flex-col h-screen relative z-10">
-        {/* Chat History Sidebar */}
-        <div className={`fixed left-0 top-0 bottom-0 w-80 bg-gray-800/95 backdrop-blur-xl border-r border-gray-700 z-20 transition-transform duration-300 ${showHistory ? 'translate-x-0' : '-translate-x-full'}`}>
+        {/* Elegant Chat History Sidebar */}
+        <div className={`fixed left-0 top-0 bottom-0 w-80 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 backdrop-blur-2xl border-r border-slate-700/50 z-20 transition-transform duration-300 shadow-2xl ${showHistory ? 'translate-x-0' : '-translate-x-full'}`}>
           <div className="flex flex-col h-full">
-            <div className="p-4 border-b border-gray-700">
+            <div className="p-5 border-b border-slate-700/50 bg-slate-800/30">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                  <History className="w-5 h-5" />
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <History className="w-5 h-5 text-blue-400" />
                   Chat History
                 </h2>
-                <button
-                  onClick={() => setShowHistory(false)}
-                  className="p-1.5 hover:bg-gray-700 rounded-lg transition-colors"
-                >
-                  <ChevronLeft className="w-4 h-4 text-gray-400" />
-                </button>
+                <div className="flex items-center gap-2">
+                  {conversationThreads.length > 0 && (
+                    <button
+                      onClick={clearChatHistory}
+                      className="p-2 hover:bg-red-600/20 rounded-lg transition-all duration-200 hover:scale-105 group"
+                      title="Clear all chat history"
+                    >
+                      <Trash2 className="w-4 h-4 text-slate-400 group-hover:text-red-400 transition-colors" />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowHistory(false)}
+                    className="p-2 hover:bg-slate-700/50 rounded-lg transition-all duration-200 hover:scale-105"
+                  >
+                    <ChevronLeft className="w-4 h-4 text-slate-400" />
+                  </button>
+                </div>
               </div>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-4 space-y-2 min-h-0 scrollbar-thin">
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0 scrollbar-thin">
               {conversationThreads.length === 0 ? (
-                <div className="text-center text-gray-500 text-sm py-8">
-                  No conversation history yet
+                <div className="text-center text-slate-500 text-sm py-12">
+                  <div className="mb-2">No conversation history yet</div>
+                  <div className="text-xs text-slate-600">Start a new conversation to get started</div>
                 </div>
               ) : (
                 conversationThreads.map((thread) => {
                   return (
                     <div
                       key={thread.id}
-                      onClick={() => {
-                        // Load this conversation thread
-                        setCurrentThreadId(thread.id)
-                      }}
-                      className={`p-3 rounded-lg cursor-pointer transition-all hover:bg-gray-700/50 border ${
-                        thread.id === currentThreadId ? 'bg-gray-700/50 border-blue-500/50' : 'border-gray-700/50'
+                      onClick={() => loadThread(thread.id)}
+                      className={`p-4 rounded-xl cursor-pointer transition-all duration-200 hover:bg-slate-700/40 border backdrop-blur-sm group ${
+                        thread.id === currentThreadId 
+                          ? 'bg-gradient-to-br from-blue-600/20 to-indigo-600/20 border-blue-500/50 shadow-lg ring-2 ring-blue-500/30' 
+                          : 'border-slate-700/50 hover:border-slate-600/50 hover:shadow-md'
                       }`}
                     >
-                      <div className="flex items-start gap-2 mb-2">
-                        <div className="p-1.5 rounded bg-blue-600/20">
-                          <Sparkles className="w-4 h-4 text-blue-400" />
+                      <div className="flex items-start gap-3 mb-2">
+                        <div className="p-2 rounded-lg bg-gradient-to-br from-blue-600/30 to-indigo-600/30">
+                          <Sparkles className="w-4 h-4 text-blue-300" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-white truncate">{thread.title}</p>
+                          <p className="text-sm font-semibold text-white truncate">{thread.title}</p>
                         </div>
                       </div>
-                      <p className="text-xs text-gray-500 line-clamp-2 mb-2">{thread.lastMessage}</p>
-                      <div className="flex items-center justify-between text-xs text-gray-600">
-                        <span>{thread.messageCount} messages</span>
+                      <p className="text-xs text-slate-400 line-clamp-2 mb-3 leading-relaxed">{thread.lastMessage}</p>
+                      <div className="flex items-center justify-between text-xs text-slate-500">
+                        <span className="font-medium">{thread.messageCount} messages</span>
                         <span>{new Date(thread.timestamp).toLocaleDateString()}</span>
                       </div>
                     </div>
@@ -2023,35 +2323,49 @@ export default function Home() {
 
         {/* Main Content */}
         <div className={`flex-1 flex flex-col h-full overflow-hidden transition-all duration-300 ${showHistory ? 'ml-80' : 'ml-0'}`}>
-          {/* Clean, Sleek Header - with backdrop blur */}
-          <header className="bg-gray-800/90 backdrop-blur-md border-b border-gray-700 shadow-lg flex-shrink-0">
-            <div className="max-w-5xl mx-auto px-6 py-4">
+          {/* Elegant Professional Header */}
+          <header className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 backdrop-blur-xl border-b border-slate-700/50 shadow-2xl flex-shrink-0">
+            <div className="max-w-6xl mx-auto px-6 py-5">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-4">
                   {!showHistory && (
                     <button
                       onClick={() => setShowHistory(true)}
-                      className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+                      className="p-2.5 hover:bg-slate-700/50 rounded-xl transition-all duration-200 hover:scale-105"
                     >
-                      <History className="w-5 h-5 text-gray-400" />
+                      <History className="w-5 h-5 text-slate-300" />
                     </button>
                   )}
                   <button
                     onClick={createNewChat}
-                    className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+                    className="p-2.5 hover:bg-slate-700/50 rounded-xl transition-all duration-200 hover:scale-105"
                     title="New Chat"
                   >
-                    <MessageSquarePlus className="w-5 h-5 text-gray-400" />
+                    <MessageSquarePlus className="w-5 h-5 text-slate-300" />
                   </button>
-                  <div className="bg-gradient-to-br from-blue-600 to-indigo-600 p-2.5 rounded-lg shadow-md">
-                    <Plane className="w-5 h-5 text-white animate-bounce" style={{ animationDuration: '2s' }} />
-                  </div>
-                  <div>
-                    <h1 className="text-xl font-bold text-white">WanderSure</h1>
-                    <p className="text-xs text-gray-400">Wanda • Travel Insurance Agent</p>
+                  <div className="relative flex items-center gap-3">
+                    {/* WanderSure Logo */}
+                    <div className="relative">
+                      <div className="absolute inset-0 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-500 rounded-xl blur-sm opacity-60 animate-pulse-slow"></div>
+                      <div className="relative bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 p-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-white">
+                          <path d="M12 2L2 7L12 12L22 7L12 2Z" fill="currentColor" opacity="0.9"/>
+                          <path d="M2 17L12 22L22 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          <path d="M2 12L12 17L22 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          <circle cx="12" cy="7" r="1.5" fill="currentColor" opacity="0.8"/>
+                        </svg>
+                      </div>
+                    </div>
+                    <div className="pl-1">
+                      <h1 className="text-2xl font-bold bg-gradient-to-r from-white via-blue-100 to-indigo-100 bg-clip-text text-transparent tracking-tight flex items-center gap-2">
+                        <span>WanderSure</span>
+                        <span className="text-lg">✈️</span>
+                      </h1>
+                      <p className="text-sm text-slate-400 font-medium mt-0.5">Your Intelligent Travel Insurance Assistant</p>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   {/* Google Translate Widget */}
                   <div id="google_translate_element" className="flex items-center">
                     {/* Will be populated by Google Translate automatically */}
@@ -2073,6 +2387,37 @@ export default function Home() {
                       background: transparent !important;
                       box-shadow: none !important;
                     }
+                    /* Style Google Translate button - make it match the dark theme */
+                    .goog-te-gadget {
+                      color: rgb(226, 232, 240) !important;
+                      font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+                    }
+                    .goog-te-gadget-simple {
+                      background-color: rgba(30, 41, 59, 0.8) !important;
+                      border: 1px solid rgba(100, 116, 139, 0.5) !important;
+                      border-radius: 0.75rem !important;
+                      padding: 0.5rem 0.75rem !important;
+                      backdrop-filter: blur(8px) !important;
+                      transition: all 0.2s !important;
+                    }
+                    .goog-te-gadget-simple:hover {
+                      background-color: rgba(51, 65, 85, 0.9) !important;
+                      border-color: rgba(59, 130, 246, 0.5) !important;
+                    }
+                    .goog-te-gadget-simple .goog-te-menu-value {
+                      color: rgb(226, 232, 240) !important;
+                      font-size: 14px !important;
+                    }
+                    .goog-te-gadget-simple .goog-te-menu-value span {
+                      color: rgb(148, 163, 184) !important;
+                    }
+                    .goog-te-gadget-icon {
+                      margin-left: 0.5rem !important;
+                      margin-right: 0 !important;
+                    }
+                    .goog-te-menu-value {
+                      color: rgb(226, 232, 240) !important;
+                    }
                   `}</style>
                 </div>
               </div>
@@ -2080,11 +2425,17 @@ export default function Home() {
           </header>
           
           {/* Onboarding Modal - User data collection */}
-          {showOnboarding && (
-            <UserOnboarding
-              onComplete={handleOnboardingComplete}
-              onSkip={handleSkipOnboarding}
-            />
+          {showOnboarding ? (
+            <div data-onboarding-active="true" style={{ position: 'fixed', zIndex: 99999, inset: 0 }}>
+              <UserOnboarding
+                onComplete={handleOnboardingComplete}
+                onSkip={handleSkipOnboarding}
+              />
+            </div>
+          ) : (
+            <div data-onboarding-hidden="true" style={{ display: 'none' }}>
+              {/* Debug: Onboarding is hidden, showOnboarding={showOnboarding} */}
+            </div>
           )}
 
           {/* Messages - Dark Mode */}
@@ -2097,24 +2448,24 @@ export default function Home() {
                   style={{ animationDelay: `${index * 0.05}s` }}
                 >
                   {message.role === 'assistant' && (
-                    <div className="flex items-start gap-3 max-w-[85%] animate-slide-in-left">
+                    <div className="flex items-start gap-4 max-w-[85%] animate-slide-in-left">
                       <div className="relative flex-shrink-0 group/avatar">
-                        <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-lg blur opacity-50 animate-pulse-slow"></div>
-                        <div className="relative bg-gradient-to-br from-blue-500 to-indigo-500 p-2 rounded-lg shadow-lg transform transition-transform duration-300 group-hover/avatar:scale-110">
-                          <Sparkles className="w-4 h-4 text-white" />
+                        <div className="absolute inset-0 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-500 rounded-xl blur-md opacity-40 animate-pulse-slow"></div>
+                        <div className="relative bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 p-2.5 rounded-xl shadow-xl transform transition-all duration-300 group-hover/avatar:scale-110 group-hover/avatar:shadow-2xl">
+                          <Sparkles className="w-5 h-5 text-white" />
                         </div>
                       </div>
                       <div className="relative group flex-1">
-                        <div className="absolute -inset-1 bg-gradient-to-r from-blue-600/20 via-indigo-600/20 to-purple-600/20 rounded-xl blur-lg opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-                        <div className="relative bg-gray-800/95 rounded-2xl px-6 py-6 shadow-2xl border border-gray-700/50 backdrop-blur-md">
+                        <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-600/30 via-indigo-600/30 to-purple-600/30 rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                        <div className="relative bg-gradient-to-br from-slate-800 via-slate-800 to-slate-900 rounded-2xl px-6 py-5 shadow-2xl border border-slate-700/60 backdrop-blur-xl">
                           {/* Enhanced content with cards */}
                           <div className="relative prose prose-invert prose-sm max-w-none" style={{ fontFamily: 'Inter, system-ui, -apple-system, sans-serif' }}>
                         <EnhancedMarkdown
                           content={message.content
                             .replace(/━━━+/g, '\n\n### ') // Convert separator lines to section headers
                             .replace(/^━+$/gm, '### ') // Convert standalone separator lines
-                            .replace(/\*\*(Policy:|TravelEasy|Scootsurance|MSIG[^\*]*)\*\*/gi, '**$1**')
-                            .replace(/(Policy:|TravelEasy|Scootsurance|MSIG[^•\n]*)/gi, '**$1**')}
+                            .replace(/\*\*(Policy:|INTERNATIONAL TRAVEL|MHInsure Travel|Scootsurance|MSIG[^\*]*)\*\*/gi, '**$1**')
+                            .replace(/(Policy:|INTERNATIONAL TRAVEL|MHInsure Travel|Scootsurance|MSIG[^•\n]*)/gi, '**$1**')}
                           quotes={message.quotes}
                           language={language}
                         />
@@ -2395,8 +2746,8 @@ export default function Home() {
                 
                 {message.role === 'user' && (
                   <div className="relative group max-w-[85%] animate-slide-in-right">
-                    <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl blur opacity-30 group-hover:opacity-50 transition-opacity animate-pulse-glow"></div>
-                    <div className="relative bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-600 rounded-2xl px-6 py-4 shadow-xl border border-blue-400/20 transform transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl">
+                    <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 rounded-2xl blur-md opacity-40 group-hover:opacity-60 transition-opacity"></div>
+                    <div className="relative bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 rounded-2xl px-6 py-4 shadow-2xl border border-blue-400/30 transform transition-all duration-300 hover:scale-[1.01] hover:shadow-3xl">
                       <p className="text-white font-medium whitespace-pre-wrap leading-relaxed tracking-wide">{message.content}</p>
                     </div>
                   </div>
@@ -2458,10 +2809,10 @@ export default function Home() {
             </div>
           )}
 
-          {/* Clean Input Bar - Dark Mode */}
-          <div className="bg-gray-800/90 backdrop-blur-md border-t border-gray-700 p-4 shadow-lg flex-shrink-0">
+          {/* Elegant Input Bar */}
+          <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 backdrop-blur-xl border-t border-slate-700/50 p-5 shadow-2xl flex-shrink-0">
           <div className="max-w-5xl mx-auto">
-            <div className="flex items-center gap-2">
+            <div className="flex items-end gap-3">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -2474,40 +2825,43 @@ export default function Home() {
               />
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="p-2.5 text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded-lg transition-colors"
+                className="p-3 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 rounded-xl transition-all duration-200 hover:scale-105"
                 title="Upload document"
               >
                 <Upload className="w-5 h-5" />
               </button>
               
-              <div className="flex-1 bg-gray-700/80 rounded-xl border border-gray-600 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all backdrop-blur-sm">
-                <textarea
-                  value={input}
-                  onChange={(e) => {
-                    setInput(e.target.value)
-                    // Auto-resize textarea
-                    e.target.style.height = 'auto'
-                    e.target.style.height = `${Math.min(e.target.scrollHeight, 128)}px`
-                  }}
-                  onKeyDown={handleKeyPress}
-                  placeholder="Ask about travel insurance or upload a booking document..."
-                  className="w-full bg-transparent border-none outline-none px-4 py-3.5 text-gray-100 placeholder-gray-400 resize-none min-h-[48px] max-h-32 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent leading-relaxed"
-                  style={{ 
-                    fontSize: '15px',
-                    fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
-                    letterSpacing: '0.01em'
-                  }}
-                  disabled={isLoading || isUploading}
-                  rows={1}
-                />
+              <div className="flex-1 relative">
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 via-indigo-500/20 to-purple-500/20 rounded-2xl blur-xl opacity-0 focus-within:opacity-100 transition-opacity duration-300"></div>
+                <div className="relative bg-slate-800/80 rounded-2xl border border-slate-600/50 focus-within:border-blue-500/50 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all backdrop-blur-sm">
+                  <textarea
+                    value={input}
+                    onChange={(e) => {
+                      setInput(e.target.value)
+                      // Auto-resize textarea
+                      e.target.style.height = 'auto'
+                      e.target.style.height = `${Math.min(e.target.scrollHeight, 128)}px`
+                    }}
+                    onKeyDown={handleKeyPress}
+                    placeholder="Ask about travel insurance or upload a booking document..."
+                    className="w-full bg-transparent border-none outline-none px-5 py-4 text-slate-100 placeholder-slate-400 resize-none min-h-[52px] max-h-32 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-transparent leading-relaxed"
+                    style={{ 
+                      fontSize: '15px',
+                      fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+                      letterSpacing: '0.01em'
+                    }}
+                    disabled={isLoading || isUploading}
+                    rows={1}
+                  />
+                </div>
               </div>
               
               <button
                 onClick={isListening ? stopVoiceInput : startVoiceInput}
-                className={`p-2.5 rounded-lg transition-all ${
+                className={`p-3 rounded-xl transition-all duration-200 ${
                   isListening 
-                    ? 'bg-red-600 text-white animate-pulse' 
-                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'
+                    ? 'bg-red-600 text-white animate-pulse shadow-lg shadow-red-500/50' 
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 hover:scale-105'
                 }`}
                 title="Voice input"
               >
@@ -2516,10 +2870,10 @@ export default function Home() {
               
               <button
                 onClick={() => setIsSpeaking(!isSpeaking)}
-                className={`p-2.5 rounded-lg transition-all ${
+                className={`p-3 rounded-xl transition-all duration-200 ${
                   isSpeaking 
-                    ? 'bg-emerald-600 text-white' 
-                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'
+                    ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/50' 
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 hover:scale-105'
                 }`}
                 title="Voice output"
               >
@@ -2529,10 +2883,11 @@ export default function Home() {
               <button
                 onClick={handleSend}
                 disabled={isLoading || !input.trim() || isUploading}
-                className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 font-semibold"
+                className="relative px-6 py-3.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white rounded-xl hover:shadow-2xl hover:shadow-blue-500/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center gap-2 font-semibold hover:scale-105 disabled:hover:scale-100"
               >
-                <Send className="w-5 h-5" />
-                <span className="hidden sm:inline">Send</span>
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 rounded-xl blur opacity-0 hover:opacity-50 transition-opacity"></div>
+                <Send className="w-5 h-5 relative z-10" />
+                <span className="hidden sm:inline relative z-10">Send</span>
               </button>
             </div>
           </div>

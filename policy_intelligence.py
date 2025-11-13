@@ -93,11 +93,11 @@ class PolicyIntelligence:
         """Normalize policy text to taxonomy structure using Groq"""
         logger.info("Normalizing policies to taxonomy...")
         
-        # Map policy names
+        # Map policy names - UPDATED to use new policies
         policy_mapping = {
-            "Scootsurance QSR022206_updated": "Product A",
-            "TravelEasy Policy QTD032212": "Product B",
-            "TravelEasy Pre-Ex Policy QTD032212-PX": "Product C"
+            "INTERNATIONAL TRAVEL": "Product A",
+            "MHInsure Travel": "Product B",
+            "Scootsurance": "Product C"
         }
         
         # Get taxonomy structure

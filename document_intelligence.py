@@ -59,8 +59,9 @@ class DocumentIntelligence:
 
 Return as structured text that can be parsed for travel insurance."""
                     
-                    # For now, create a description for the LLM
-                    text = f"[Image document uploaded: {file.size} bytes - {header}] Please extract travel booking information from this image including destination, dates, and traveler details."
+                    # For images, we'll use the base64 data directly in the prompt
+                    # The LLM will handle the image description
+                    text = f"[Image document uploaded: {len(file_bytes)} bytes - {header}] Please extract travel booking information from this image including destination, dates, and traveler details."
                 else:
                     # Try as text
                     text = file_bytes.decode('utf-8', errors='ignore')
@@ -89,118 +90,159 @@ Return as structured text that can be parsed for travel insurance."""
             
             # For images, use a more detailed prompt
             if document_type == "image":
-                extraction_prompt = f"""Extract travel booking information from this IMAGE document. Use OCR techniques to read:
+                extraction_prompt = f"""You are analyzing a TRAVEL BOOKING IMAGE (screenshot or photo). Extract all visible travel booking information.
 
-Document Type: IMAGE (screenshot or photo of booking)
+IMPORTANT: Even if some information is partially visible or unclear, extract what you CAN see. Partial information is better than nothing.
 
-Look carefully for:
+Look carefully for ANY of these details:
 - Flight numbers, airline names
-- Departure and arrival airports/cities
+- Departure and arrival airports/cities  
 - Source/departure location
-- Travel dates (departure, return)
-- Passenger names and ages (count total pax)
+- Travel dates (departure, return) - can be in any format (e.g., "Dec 15, 2024" or "15/12/2024")
+- Passenger names and count
 - Booking reference numbers
 - Ticket policies or booking policies mentioned
 - Trip costs/prices
 - Destination cities or countries
 
-Extract all visible text and information. Return as JSON:
+Return as JSON with these fields. Use null for fields you cannot see at all:
 {{
-    "destination": "city, country",
-    "source": "city, country (departure location)",
-    "departure_date": "YYYY-MM-DD",
-    "return_date": "YYYY-MM-DD",
-    "pax": <number of travelers>,
+    "destination": "city, country (e.g., Tokyo, Japan) or null",
+    "source": "city, country (departure location) or null",
+    "departure_date": "YYYY-MM-DD format (convert any date format you see) or null",
+    "return_date": "YYYY-MM-DD format or null",
+    "pax": <number of travelers if visible, otherwise 1>,
     "travelers": [
         {{
-            "name": "Full Name if visible",
+            "name": "Full Name if visible, otherwise empty string",
             "age": 0
         }}
     ],
-    "ticket_policies": ["any policy mentioned in ticket"],
+    "ticket_policies": ["any policy mentioned"] or [],
     "flight_details": {{
-        "airline": "",
-        "flight_number": "",
-        "departure_airport": "",
-        "arrival_airport": ""
+        "airline": "airline name if visible" or "",
+        "flight_number": "flight number if visible" or "",
+        "departure_airport": "airport code or city" or "",
+        "arrival_airport": "airport code or city" or ""
     }},
     "hotel_details": {{
-        "hotel_name": "",
-        "check_in": "YYYY-MM-DD",
-        "check_out": "YYYY-MM-DD",
-        "location": ""
+        "hotel_name": "" or null,
+        "check_in": "YYYY-MM-DD" or null,
+        "check_out": "YYYY-MM-DD" or null,
+        "location": "" or null
     }},
-    "trip_cost": 0,
+    "trip_cost": 0 or null,
     "activities": [],
-    "trip_purpose": "business/leisure/adventure",
-    "additional_info": ""
+    "trip_purpose": "business/leisure/adventure" or null,
+    "additional_info": "any other relevant information you see"
 }}
 
-Extract everything you can see in the image. If dates are in text format (e.g., "Dec 15"), convert to YYYY-MM-DD format."""
+CRITICAL: Extract ANY information you can see, even if incomplete. If you see a destination but not dates, still return the destination. If you see dates but not destination, return the dates. Partial extraction is acceptable."""
             else:
                 # Use Groq to extract structured information with focus on insurance-relevant data
                 extraction_prompt = f"""Extract travel insurance-relevant information from this {document_type.upper()} document:
 
 Document Content:
-{text[:8000]}
+{text[:10000]}
 
-IMPORTANT: Extract information needed for travel insurance quotes:
-- Trip destination (critical for risk assessment)
+IMPORTANT: Extract ANY information you can find, even if incomplete. Partial data is better than nothing.
+
+Look for:
+- Trip destination (city, country) - CRITICAL
 - Source/departure location (city, country)
-- Travel dates (start and end dates)
-- Number of travelers and their ages (for pricing - pax count)
-- Ticket policies/booking policies mentioned in document
-- Trip cost (for trip cancellation coverage)
-- Planned activities (for activity-based coverage needs)
+- Travel dates (start and end dates) - can be in various formats
+- Number of travelers (pax count)
+- Traveler ages if mentioned
+- Ticket policies/booking policies mentioned
+- Trip cost/price
+- Planned activities
+- Flight details (airline, flight number, airports)
+- Hotel details (name, check-in/out dates, location)
 
-Return as JSON:
+Return as JSON. Use null for fields completely absent, but try to extract partial information:
 {{
-    "destination": "city, country (e.g., Tokyo, Japan)",
-    "source": "city, country (e.g., Singapore, Singapore)",
-    "departure_date": "YYYY-MM-DD",
-    "return_date": "YYYY-MM-DD",
-    "pax": <number of travelers>,
+    "destination": "city, country (e.g., Tokyo, Japan) or null",
+    "source": "city, country (e.g., Singapore, Singapore) or null",
+    "departure_date": "YYYY-MM-DD (convert any date format you see) or null",
+    "return_date": "YYYY-MM-DD (convert any date format you see) or null",
+    "pax": <number of travelers if mentioned, otherwise 1>,
     "travelers": [
         {{
-            "name": "Full Name if available",
-            "age": 0
+            "name": "Full Name if available" or "",
+            "age": <age if mentioned> or 0
         }}
     ],
-    "ticket_policies": ["policy mentioned in ticket/booking", "another policy if mentioned"],
+    "ticket_policies": ["policy mentioned"] or [],
     "flight_details": {{
-        "airline": "",
-        "flight_number": "",
-        "departure_airport": "",
-        "arrival_airport": ""
+        "airline": "" or null,
+        "flight_number": "" or null,
+        "departure_airport": "" or null,
+        "arrival_airport": "" or null
     }},
     "hotel_details": {{
-        "hotel_name": "",
-        "check_in": "YYYY-MM-DD",
-        "check_out": "YYYY-MM-DD",
-        "location": ""
+        "hotel_name": "" or null,
+        "check_in": "YYYY-MM-DD" or null,
+        "check_out": "YYYY-MM-DD" or null,
+        "location": "" or null
     }},
-    "trip_cost": 0,
-    "activities": [],
-    "trip_purpose": "business/leisure/adventure",
-    "additional_info": ""
+    "trip_cost": <number if mentioned> or 0 or null,
+    "activities": [] or ["activity names if mentioned"],
+    "trip_purpose": "business/leisure/adventure" or null,
+    "additional_info": "any other relevant information"
 }}
 
-Extract all available information. Use null only for fields completely absent."""
+CRITICAL: Extract ANY information visible, even if incomplete. If you see destination but not dates, return destination. If you see dates but not destination, return dates."""
 
             # For images, we might need to use vision capabilities if available
             # For now, use text-based extraction
             
-            response = self.client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[
-                    {"role": "system", "content": "You are an expert at extracting structured information from travel documents. Always return valid JSON."},
-                    {"role": "user", "content": extraction_prompt}
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.1
-            )
-            
-            extracted = json.loads(response.choices[0].message.content)
+            try:
+                response = self.client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {"role": "system", "content": "You are an expert at extracting structured information from travel documents. Always return valid JSON. Even if information is incomplete, return what you can extract."},
+                        {"role": "user", "content": extraction_prompt}
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.1,
+                    max_tokens=2000
+                )
+                
+                response_text = response.choices[0].message.content
+                logger.debug(f"LLM extraction response: {response_text[:500]}")
+                
+                # Try to parse JSON - handle common issues
+                try:
+                    extracted = json.loads(response_text)
+                except json.JSONDecodeError as je:
+                    logger.warning(f"JSON parse error: {je}. Response: {response_text[:200]}")
+                    # Try to extract JSON from markdown code blocks
+                    import re
+                    json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+                    if json_match:
+                        extracted = json.loads(json_match.group(1))
+                    else:
+                        # Try to find JSON object in the text
+                        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+                        if json_match:
+                            extracted = json.loads(json_match.group(0))
+                        else:
+                            raise je
+            except Exception as llm_error:
+                logger.error(f"LLM extraction failed: {llm_error}", exc_info=True)
+                # Return partial success with empty data - let user provide info manually
+                return {
+                    "success": False,
+                    "error": f"Could not process document with AI: {str(llm_error)}",
+                    "extracted_data": {},
+                    "message": "I had trouble reading your document. Please try uploading a clearer version or describe your trip manually.",
+                    "validation_questions": [
+                        "What is your trip destination?",
+                        "When does your trip start?",
+                        "When does your trip end?",
+                        "How many travelers?"
+                    ]
+                }
             
             # Validate and enrich
             result = {
@@ -210,26 +252,47 @@ Extract all available information. Use null only for fields completely absent.""
                 "validation_questions": []
             }
             
-            # Validate ALL critical fields before suggesting
+            # Validate fields - but be more lenient
             validation_questions = []
-            missing_critical = False
+            missing_fields = []
             
-            if not extracted.get("destination"):
+            # Check what we have
+            has_destination = bool(extracted.get("destination"))
+            has_departure_date = bool(extracted.get("departure_date"))
+            has_return_date = bool(extracted.get("return_date"))
+            has_travelers = bool(extracted.get("travelers") and len(extracted.get("travelers", [])) > 0) or bool(extracted.get("pax"))
+            
+            # Only flag as missing if we have NOTHING
+            if not has_destination:
+                missing_fields.append("destination")
                 validation_questions.append("What is your trip destination? (city and country)")
-                missing_critical = True
-            if not extracted.get("departure_date"):
+            if not has_departure_date:
+                missing_fields.append("departure_date")
                 validation_questions.append("When does your trip start? (departure date)")
-                missing_critical = True
-            if not extracted.get("return_date"):
+            if not has_return_date:
+                missing_fields.append("return_date")
                 validation_questions.append("When does your trip end? (return date)")
-                missing_critical = True
-            if not extracted.get("travelers") or len(extracted.get("travelers", [])) == 0:
+            if not has_travelers:
+                missing_fields.append("travelers")
                 validation_questions.append("How many travelers? And what are their ages?")
-                missing_critical = True
+            
+            # Set default values if missing but we have some data
+            if not extracted.get("pax") and not extracted.get("travelers"):
+                extracted["pax"] = 1
+                extracted["travelers"] = [{"name": "", "age": 30}]
+            
+            # If we have at least destination OR dates, consider it partially successful
+            has_partial_data = has_destination or has_departure_date or has_return_date
             
             result["validation_questions"] = validation_questions
-            result["missing_critical_fields"] = missing_critical
-            result["ready_for_quote"] = not missing_critical
+            result["missing_fields"] = missing_fields
+            result["has_partial_data"] = has_partial_data
+            result["ready_for_quote"] = has_destination and (has_departure_date or has_return_date) and has_travelers
+            
+            # If we have partial data, still mark as success
+            if has_partial_data:
+                result["success"] = True
+                result["confidence"] = "partial" if missing_fields else "high"
             
             # ENHANCEMENT 1: Destination-first analysis with claims data
             destination = extracted.get("destination")
@@ -294,17 +357,28 @@ Extract all available information. Use null only for fields completely absent.""
                 except Exception as e:
                     logger.error(f"Destination analysis failed: {e}", exc_info=True)
             
-            if missing_critical:
-                result["message"] = "I need a bit more information before I can suggest insurance options. Please provide the missing details."
+            if missing_fields:
+                result["message"] = "I found some information, but I need a bit more to suggest the best insurance options. Please provide the missing details."
             
             return result
         
         except Exception as e:
-            logger.error(f"Document extraction failed: {e}")
+            logger.error(f"Document extraction failed: {e}", exc_info=True)
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            
+            # Return a more helpful error response
             return {
                 "success": False,
                 "error": str(e),
-                "extracted_data": {}
+                "extracted_data": {},
+                "message": f"I had trouble reading your document. Error: {str(e)[:100]}. Please try uploading a clearer version or describe your trip manually.",
+                "validation_questions": [
+                    "What is your trip destination?",
+                    "When does your trip start?",
+                    "When does your trip end?",
+                    "How many travelers?"
+                ]
             }
     
     def _extract_pdf_text(self, pdf_path: Path) -> str:

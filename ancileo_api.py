@@ -13,26 +13,170 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 class AncileoAPI:
-    """Handles integration with Ancileo's travel insurance API"""
+    """Handles integration with Ancileo's travel insurance API with support for multiple API keys"""
     
     def __init__(self):
-        self.api_key = os.getenv("ANCILEO_API_KEY", "")
-        # According to Ancileo documentation: https://www.ancileo.com/insurance-api/
-        # Base URL format: https://[base]/v1/travel/front/[endpoint]
-        # Try production URL first, fallback to dev
+        # Support for multiple API keys (3 keys for 3 different products)
+        self.api_keys = {
+            1: os.getenv("ANCILEO_API_KEY_1", ""),
+            2: os.getenv("ANCILEO_API_KEY_2", ""),
+            3: os.getenv("ANCILEO_API_KEY_3", "")
+        }
+        
+        # Fallback to single key for backward compatibility
+        if not any(self.api_keys.values()):
+            legacy_key = os.getenv("ANCILEO_API_KEY", "")
+            if legacy_key and legacy_key != "your_ancileo_api_key_here":
+                self.api_keys[1] = legacy_key
+                logger.info("Using legacy ANCILEO_API_KEY (single key)")
+        
+        # Track which keys are configured
+        self.available_keys = [k for k, v in self.api_keys.items() if v and v != f"your_ancileo_api_key_{k}_here"]
+        self.current_key_index = 0  # For round-robin selection
+        
+        # Load key mapping from environment (optional)
+        self.key_mapping = self._load_key_mapping()
+        
+        # Base URL configuration
         base_domain = os.getenv("ANCILEO_BASE_URL", "dev.api.ancileo.com")
         self.base_url = f"https://{base_domain}/v1/travel/front"
         
-        if not self.api_key or self.api_key == "your_ancileo_api_key_here":
-            logger.warning("ANCILEO_API_KEY not set - some features may be limited")
+        if not self.available_keys:
+            logger.warning("No Ancileo API keys configured - some features may be limited")
         else:
-            logger.info(f"Ancileo API initialized with base URL: {self.base_url}")
+            logger.info(f"Ancileo API initialized with {len(self.available_keys)} API key(s) - Base URL: {self.base_url}")
     
-    def _get_headers(self) -> Dict[str, str]:
+    def _load_key_mapping(self) -> Dict[str, int]:
+        """
+        Load API key mapping from environment variable
+        
+        Supports two formats:
+        1. Product code mapping: PRODUCT_CODE:KEY_NUMBER
+        2. Policy name mapping: POLICY_NAME:KEY_NUMBER
+        
+        Examples:
+        - SG_AXA_SCOOT_COMP:1
+        - INTERNATIONAL TRAVEL:1
+        - Scootsurance:3
+        """
+        mapping_str = os.getenv("ANCILEO_KEY_MAPPING", "")
+        if not mapping_str:
+            return {}
+        
+        mapping = {}
+        for item in mapping_str.split(","):
+            item = item.strip()
+            if ":" in item:
+                identifier, key_num = item.split(":", 1)
+                try:
+                    key_num = int(key_num.strip())
+                    identifier_upper = identifier.strip().upper()
+                    mapping[identifier_upper] = key_num
+                    # Also create a lowercase version for case-insensitive matching
+                    mapping[identifier.strip().lower()] = key_num
+                except ValueError:
+                    logger.warning(f"Invalid key mapping format: {item}")
+        
+        return mapping
+    
+    def _match_policy_to_key(self, product_code: str = None, product_name: str = None) -> Optional[int]:
+        """
+        Match a policy to an API key based on product code or name
+        
+        Checks against:
+        1. Direct product code match
+        2. Product name match (case-insensitive, partial matching)
+        3. Policy name keywords (INTERNATIONAL TRAVEL, MHInsure, Scootsurance)
+        """
+        if not self.key_mapping:
+            return None
+        
+        # Check product code first
+        if product_code:
+            product_code_upper = product_code.upper()
+            if product_code_upper in self.key_mapping:
+                return self.key_mapping[product_code_upper]
+        
+        # Check product name (exact match)
+        if product_name:
+            product_name_upper = product_name.upper()
+            product_name_lower = product_name.lower()
+            if product_name_upper in self.key_mapping:
+                return self.key_mapping[product_name_upper]
+            if product_name_lower in self.key_mapping:
+                return self.key_mapping[product_name_lower]
+        
+        # Check for policy name keywords in product name
+        if product_name:
+            product_lower = product_name.lower().strip()
+            
+            # Check for exact matches first (most specific)
+            if product_lower == "scoot":
+                if "SCOOT" in self.key_mapping or "scoot" in self.key_mapping:
+                    return self.key_mapping.get("SCOOT") or self.key_mapping.get("scoot")
+            if product_lower == "mag":
+                if "MAG" in self.key_mapping or "mag" in self.key_mapping:
+                    return self.key_mapping.get("MAG") or self.key_mapping.get("mag")
+            if product_lower == "trip":
+                if "TRIP" in self.key_mapping or "trip" in self.key_mapping:
+                    return self.key_mapping.get("TRIP") or self.key_mapping.get("trip")
+            
+            # Check for partial matches (less specific)
+            if "scootsurance" in product_lower or "scoot" in product_lower:
+                if "SCOOTSURANCE" in self.key_mapping or "scootsurance" in self.key_mapping:
+                    return self.key_mapping.get("SCOOTSURANCE") or self.key_mapping.get("scootsurance")
+                if "SCOOT" in self.key_mapping or "scoot" in self.key_mapping:
+                    return self.key_mapping.get("SCOOT") or self.key_mapping.get("scoot")
+            
+            if "mhinsure" in product_lower or "mh insure" in product_lower or "mag" in product_lower:
+                if "MHINSURE TRAVEL" in self.key_mapping or "mhinsure travel" in self.key_mapping:
+                    return self.key_mapping.get("MHINSURE TRAVEL") or self.key_mapping.get("mhinsure travel")
+                if "MAG" in self.key_mapping or "mag" in self.key_mapping:
+                    return self.key_mapping.get("MAG") or self.key_mapping.get("mag")
+            
+            if "international" in product_lower and "travel" in product_lower:
+                if "INTERNATIONAL TRAVEL" in self.key_mapping or "international travel" in self.key_mapping:
+                    return self.key_mapping.get("INTERNATIONAL TRAVEL") or self.key_mapping.get("international travel")
+                if "TRIP" in self.key_mapping or "trip" in self.key_mapping:
+                    return self.key_mapping.get("TRIP") or self.key_mapping.get("trip")
+        
+        return None
+    
+    def _get_api_key_for_product(self, product_code: str = None, product_name: str = None) -> str:
+        """
+        Get the appropriate API key for a product
+        
+        Priority:
+        1. Use key mapping if product_code or product_name matches a mapping
+        2. Use round-robin selection across available keys
+        3. Fallback to first available key
+        """
+        if not self.available_keys:
+            return ""
+        
+        # Try to match policy to key
+        matched_key = self._match_policy_to_key(product_code, product_name)
+        if matched_key and matched_key in self.available_keys:
+            logger.debug(f"Using mapped API key {matched_key} for product {product_code or product_name}")
+            return self.api_keys[matched_key]
+        
+        # Round-robin selection
+        key_num = self.available_keys[self.current_key_index % len(self.available_keys)]
+        self.current_key_index += 1
+        logger.debug(f"Using API key {key_num} (round-robin)")
+        return self.api_keys[key_num]
+    
+    @property
+    def api_key(self) -> str:
+        """Get default API key (for backward compatibility)"""
+        return self._get_api_key_for_product()
+    
+    def _get_headers(self, product_code: str = None) -> Dict[str, str]:
         """Get headers for API requests - according to Ancileo docs, header is X-Api-Key"""
+        api_key = self._get_api_key_for_product(product_code)
         return {
             "Content-Type": "application/json",
-            "X-Api-Key": self.api_key  # Capital X as per Ancileo documentation
+            "X-Api-Key": api_key  # Capital X as per Ancileo documentation
         }
     
     async def get_quote(
@@ -69,11 +213,11 @@ class AncileoAPI:
         
         Returns available policies with pricing and details
         """
-        if not self.api_key:
+        if not self.available_keys:
             return {
                 "success": False,
                 "error": "ANCILEO_API_KEY not configured",
-                "message": "Please set ANCILEO_API_KEY in .env file"
+                "message": "Please set ANCILEO_API_KEY_1, ANCILEO_API_KEY_2, and/or ANCILEO_API_KEY_3 in .env file"
             }
         
         # Validate dates
@@ -131,13 +275,12 @@ class AncileoAPI:
         if currency:
             context["currency"] = currency
         
-        # Build request body according to Ancileo API documentation
+        # Build request body according to new Ancileo API documentation format
         request_body = {
             "market": market.upper(),
             "languageCode": language_code.lower(),
-            "deviceType": device_type.upper(),  # MOBILE, DESKTOP, TABLET, OTHER
-            "touchPoint": "details",  # Hardcoded as per API docs
-            "channel": channel,
+            "channel": channel,  # "white-label" as per new docs
+            "deviceType": device_type.upper(),  # "DESKTOP" as per new docs
             "context": context
         }
         
@@ -145,74 +288,104 @@ class AncileoAPI:
         if insureds:
             request_body["insureds"] = insureds
         
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                # Log request details for debugging
-                logger.debug(f"Ancileo API Request URL: {self.base_url}/pricing")
-                logger.debug(f"Ancileo API Request Body: {json.dumps(request_body, indent=2)}")
-                
-                response = await client.post(
-                    f"{self.base_url}/pricing",
-                    headers=self._get_headers(),
-                    json=request_body
-                )
-                
-                logger.debug(f"Ancileo API Response Status: {response.status_code}")
-                logger.debug(f"Ancileo API Response Headers: {dict(response.headers)}")
-                
-                if response.status_code == 200:
-                    try:
-                        data = response.json()
-                        policies = self._parse_policies_from_response(data)
-                        quote_id = data.get("id") or data.get("quoteId") or data.get("quote_id")
-                        logger.info(f"Successfully fetched quote from Ancileo API - Quote ID: {quote_id}, Found {len(policies)} policies")
-                        return {
-                            "success": True,
-                            "quote_id": quote_id,
-                            "policies": policies,
-                            "raw_response": data
-                        }
-                    except json.JSONDecodeError as e:
-                        logger.error(f"Failed to parse Ancileo API response as JSON: {e}")
-                        logger.error(f"Response text: {response.text[:500]}")
-                        return {
-                            "success": False,
-                            "error": "Invalid JSON response from Ancileo API",
-                            "message": response.text[:500]
-                        }
-                elif response.status_code == 502:
-                    logger.error(f"Ancileo API Gateway Error (502): {response.text[:500]}")
-                    return {
-                        "success": False,
-                        "error": "API Gateway Error (502)",
-                        "message": "The Ancileo API gateway encountered an error. This may be a temporary issue. Please try again or check Ancileo service status.",
-                        "retryable": True
-                    }
-                else:
-                    logger.error(f"Ancileo API error: {response.status_code} - {response.text[:500]}")
-                    return {
-                        "success": False,
-                        "error": f"API returned status {response.status_code}",
-                        "message": response.text[:500],
-                        "retryable": response.status_code in [502, 503, 504]
+        # Try all available API keys to get maximum coverage
+        # Start with round-robin, but we'll collect results from all keys
+        all_policies = []
+        quote_ids = []
+        last_error = None
+        
+        for key_num in self.available_keys:
+            api_key = self.api_keys[key_num]
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    # Log request details for debugging
+                    logger.debug(f"Ancileo API Request URL: {self.base_url}/pricing (using key {key_num})")
+                    logger.debug(f"Ancileo API Request Body: {json.dumps(request_body, indent=2)}")
+                    
+                    headers = {
+                        "Content-Type": "application/json",
+                        "X-Api-Key": api_key
                     }
                     
-        except httpx.TimeoutException:
-            logger.error("Ancileo API request timed out")
+                    response = await client.post(
+                        f"{self.base_url}/pricing",
+                        headers=headers,
+                        json=request_body
+                    )
+                    
+                    logger.debug(f"Ancileo API Response Status: {response.status_code} (key {key_num})")
+                    
+                    if response.status_code == 200:
+                        try:
+                            data = response.json()
+                            policies = self._parse_policies_from_response(data, api_key_num=key_num)
+                            quote_id = data.get("id") or data.get("quoteId") or data.get("quote_id")
+                            
+                            # Collect policies and quote IDs from all API keys
+                            all_policies.extend(policies)
+                            if quote_id:
+                                quote_ids.append(quote_id)
+                            
+                            logger.info(f"Successfully fetched quote from Ancileo API (key {key_num}) - Quote ID: {quote_id}, Found {len(policies)} policies")
+                            continue  # Try next key
+                        except json.JSONDecodeError as e:
+                            logger.error(f"Failed to parse Ancileo API response as JSON (key {key_num}): {e}")
+                            logger.error(f"Response text: {response.text[:500]}")
+                            last_error = f"Invalid JSON response from Ancileo API (key {key_num})"
+                            continue  # Try next key
+                    elif response.status_code == 502:
+                        logger.warning(f"Ancileo API Gateway Error (502) with key {key_num}: {response.text[:500]}")
+                        last_error = f"API Gateway Error (502) with key {key_num}"
+                        continue  # Try next key
+                    else:
+                        logger.warning(f"Ancileo API error (key {key_num}): {response.status_code} - {response.text[:500]}")
+                        last_error = f"API returned status {response.status_code} with key {key_num}"
+                        continue  # Try next key
+                        
+            except httpx.TimeoutException:
+                logger.warning(f"Ancileo API request timed out (key {key_num})")
+                last_error = f"Request timeout with key {key_num}"
+                continue  # Try next key
+            except Exception as e:
+                logger.warning(f"Ancileo API error (key {key_num}): {e}")
+                last_error = f"Failed to connect with key {key_num}: {str(e)}"
+                continue  # Try next key
+        
+        # Return combined results from all API keys
+        if all_policies:
+            # Remove duplicates based on product_code
+            unique_policies = {}
+            for policy in all_policies:
+                product_code = policy.get("product_code")
+                if product_code and product_code not in unique_policies:
+                    unique_policies[product_code] = policy
+                elif not product_code:
+                    # If no product_code, add it anyway
+                    unique_policies[f"policy_{len(unique_policies)}"] = policy
+            
+            final_policies = list(unique_policies.values())
+            primary_quote_id = quote_ids[0] if quote_ids else None
+            
+            logger.info(f"Successfully fetched quotes from {len(self.available_keys)} API key(s) - Total unique policies: {len(final_policies)}")
             return {
-                "success": False,
-                "error": "Request timeout",
-                "message": "Ancileo API did not respond in time"
+                "success": True,
+                "quote_id": primary_quote_id,
+                "quote_ids": quote_ids,  # All quote IDs from different keys
+                "policies": final_policies,
+                "keys_used": len([k for k in self.available_keys if k]),
+                "total_policies_found": len(final_policies)
             }
-        except Exception as e:
-            logger.error(f"Ancileo API error: {e}")
+        else:
+            # All keys failed
+            logger.error(f"All Ancileo API keys failed. Last error: {last_error}")
             return {
                 "success": False,
-                "error": str(e),
-                "message": "Failed to connect to Ancileo API"
+                "error": "All API keys failed",
+                "message": last_error or "Failed to fetch quotes from any API key",
+                "retryable": True
             }
     
-    def _parse_policies_from_response(self, response_data: Dict) -> List[Dict]:
+    def _parse_policies_from_response(self, response_data: Dict, api_key_num: int = None) -> List[Dict]:
         """
         Parse policy information from Ancileo API response
         
@@ -290,6 +463,15 @@ class AncileoAPI:
                         description = re.sub(r'<[^>]+>', '', benefits_html) if benefits_html else "Travel protection"
                         description = description.strip()[:500]  # Limit length
                         
+                        # Track which API key was used for this policy
+                        policy_api_key = api_key_num
+                        if not policy_api_key:
+                            # Try to match based on product name or code
+                            matched_key = self._match_policy_to_key(product_code, product_title)
+                            if matched_key:
+                                policy_api_key = matched_key
+                                logger.debug(f"Matched policy '{product_title}' (code: {product_code}) to API key {matched_key}")
+                        
                         policy = {
                             "offer_id": offer_id,
                             "product_code": product_code,
@@ -301,7 +483,8 @@ class AncileoAPI:
                             "benefits_html": benefits_html,  # Keep original HTML for display
                             "image_url": image_url,
                             "options": options,
-                            "raw_data": offer
+                            "raw_data": offer,
+                            "api_key_used": policy_api_key  # Track which key fetched this policy
                         }
                         policies.append(policy)
                         
@@ -392,7 +575,8 @@ class AncileoAPI:
         options: List[str] = None,
         is_send_email: bool = True,
         market: str = "SG",
-        language_code: str = "en"
+        language_code: str = "en",
+        product_name: str = None
     ) -> Dict[str, Any]:
         """
         Purchase insurance policy through Ancileo API
@@ -403,11 +587,17 @@ class AncileoAPI:
         
         Note: This should be called after payment processing
         """
-        if not self.api_key:
+        if not self.available_keys:
             return {
                 "success": False,
                 "error": "ANCILEO_API_KEY not configured"
             }
+        
+        # Get the appropriate API key for this product
+        # Use product_code and product_name to find the correct key
+        api_key = self._get_api_key_for_product(product_code, product_name)
+        if product_name:
+            logger.info(f"Purchasing '{product_name}' (code: {product_code}) using mapped API key")
         
         # Build purchase offer structure
         purchase_offer = {
@@ -427,10 +617,11 @@ class AncileoAPI:
         if options:
             purchase_offer["options"] = options
         
-        # Build request body according to API docs
+        # Build request body according to new API documentation format
         request_body = {
             "market": market.upper(),
             "languageCode": language_code.lower(),
+            "channel": "white-label",  # As per new API docs
             "quoteId": quote_id,
             "purchaseOffers": [purchase_offer],
             "insureds": insureds,
@@ -447,9 +638,14 @@ class AncileoAPI:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 logger.debug(f"Ancileo Purchase Request: {json.dumps(request_body, indent=2, default=str)}")
                 
+                headers = {
+                    "Content-Type": "application/json",
+                    "X-Api-Key": api_key  # Use the product-specific API key
+                }
+                
                 response = await client.post(
                     f"{self.base_url}/purchase",
-                    headers=self._get_headers(),
+                    headers=headers,
                     json=request_body
                 )
                 
@@ -506,12 +702,15 @@ class AncileoAPI:
         
         policy_id should be the purchasedOfferId from purchase API response
         """
-        if not self.api_key:
+        if not self.available_keys:
             return {
                 "success": False,
                 "error": "ANCILEO_API_KEY not configured"
             }
         
+        # Get API key - use product_code if available, otherwise use default
+        api_key = self._get_api_key_for_product(None)
+
         request_body = {
             "market": market.upper(),
             "details": {
@@ -524,9 +723,14 @@ class AncileoAPI:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 logger.debug(f"Ancileo GetPolicy Request: {json.dumps(request_body, indent=2)}")
                 
+                headers = {
+                    "Content-Type": "application/json",
+                    "X-Api-Key": api_key
+                }
+                
                 response = await client.post(
                     f"{self.base_url}/getPolicy",
-                    headers=self._get_headers(),
+                    headers=headers,
                     json=request_body
                 )
                 

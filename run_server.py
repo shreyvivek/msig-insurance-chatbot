@@ -114,54 +114,10 @@ def inject_additional_products(ancileo_quotes: List[Dict], trip_details: Dict) -
     base_price = ancileo_quotes[0].get("price", 50) if ancileo_quotes else 50
     currency = ancileo_quotes[0].get("currency", "SGD") if ancileo_quotes else "SGD"
     
-    # Mock additional products (from Step 1 - local policies)
-    mock_products = [
-        {
-            "plan_name": "TravelEasy Comprehensive",
-            "price": round(base_price * 0.85, 2),  # 15% cheaper
-            "currency": currency,
-            "recommended_for": "Budget-conscious travelers seeking comprehensive coverage with good value",
-            "source": "local",
-            "offer_id": None,
-            "product_code": "TE_COMP",
-            "coverage": {
-                "medical": 100000,
-                "trip_cancellation": 5000,
-                "baggage": 3000
-            },
-            "features": ["24/7 assistance", "No age limit", "Adventure sports coverage"]
-        },
-        {
-            "plan_name": "Scootsurance Premium",
-            "price": round(base_price * 1.15, 2),  # 15% more expensive
-            "currency": currency,
-            "recommended_for": "Frequent travelers wanting premium protection and exclusive benefits",
-            "source": "local",
-            "offer_id": None,
-            "product_code": "SC_PREM",
-            "coverage": {
-                "medical": 200000,
-                "trip_cancellation": 10000,
-                "baggage": 5000
-            },
-            "features": ["Premium assistance", "Pre-existing condition coverage", "Cancel for any reason"]
-        },
-        {
-            "plan_name": "MSIG Essential",
-            "price": round(base_price * 0.70, 2),  # 30% cheaper - budget option
-            "currency": currency,
-            "recommended_for": "Budget travelers needing basic protection for simple trips",
-            "source": "local",
-            "offer_id": None,
-            "product_code": "MSIG_ESS",
-            "coverage": {
-                "medical": 50000,
-                "trip_cancellation": 2000,
-                "baggage": 1500
-            },
-            "features": ["Basic coverage", "Affordable pricing", "Simple claims process"]
-        }
-    ]
+    # Use NEW policies from Policy_Wordings (NO mock products)
+    # These should come from taxonomy matching, not hardcoded here
+    # This function should not be used anymore - policies come from taxonomy_matcher
+    mock_products = []
     
     # Add mock products to quotes list
     all_quotes.extend(mock_products)
@@ -182,58 +138,143 @@ async def health():
 
 @app.post("/api/ask")
 async def ask_question(request: dict):
-    question = request.get("question", "")
-    question_lower = question.lower()
-    user_id = request.get("user_id", "default_user")
-    context_data = request.get("context_data", {})
-    
-    # Check if user mentions a destination - analyze claims data proactively
-    destination_mentioned = None
-    
-    # Extract destination from question (expanded list including Coimbatore)
-    destination_keywords = ["chennai", "coimbatore", "india", "japan", "tokyo", "bangkok", "thailand",
-                          "singapore", "malaysia", "kuala lumpur", "bali", "indonesia", "china",
-                          "beijing", "shanghai", "australia", "europe", "uk", "united kingdom",
-                          "usa", "united states", "philippines", "vietnam", "korea", "seoul",
-                          "hong kong", "taiwan", "taipei", "phuket", "pattaya", "penang", "krabi"]
-    
-    for dest in destination_keywords:
-        if dest.lower() in question_lower:
-            destination_mentioned = dest
-            break
-    
-    # If destination mentioned, get claims analysis BEFORE normal flow
-    claims_analysis = None
-    enhanced_context = request.get("context") or ""
-    
-    if destination_mentioned:
-        try:
-            # Calculate trip duration if available
-            trip_duration = None
-            trip_details = context_data.get("trip_details", {})
-            if trip_details.get("departure_date") and trip_details.get("return_date"):
-                try:
-                    dep = datetime.strptime(trip_details["departure_date"], "%Y-%m-%d")
-                    ret = datetime.strptime(trip_details["return_date"], "%Y-%m-%d")
-                    trip_duration = (ret - dep).days
-                except:
-                    pass
-            
-            claims_analysis = await claims_analyzer.analyze_destination_and_recommend(
-                destination=destination_mentioned,
-                trip_duration=trip_duration
-            )
-            
-            # If we have claims data, enhance context with it
-            if claims_analysis.get("has_data"):
-                top_rec = claims_analysis.get("recommendations", [{}])[0] if claims_analysis.get("recommendations") else {}
-                common_incidents_str = ', '.join([
-                    f"{inc['incident']} ({inc['percentage']}%)" 
-                    for inc in claims_analysis.get("common_incidents", [])[:3]
-                ])
+    """Handle user questions with comprehensive error handling"""
+    try:
+        question = request.get("question", "").strip()
+        if not question:
+            return {
+                "answer": "👋 Hi there! I'm Wanda, your travel insurance assistant. How can I help you today?",
+                "content": "👋 Hi there! I'm Wanda, your travel insurance assistant. How can I help you today?",
+                "message": "👋 Hi there! I'm Wanda, your travel insurance assistant. How can I help you today?",
+                "booking_links": [],
+                "suggested_questions": [],
+                "quotes": [],
+                "quote_id": None,
+                "trip_details": None
+            }
+        
+        question_lower = question.lower()
+        user_id = request.get("user_id", "default_user")
+        context_data = request.get("context_data", {})
+        
+        # EARLY CANCELLATION DETECTION - Check before any other processing
+        # This ensures cancellation questions get immediate hardcoded response
+        cancellation_keywords = ["cancel", "cancellation", "refund", "terminate", "end policy", "stop coverage", 
+                                 "how to cancel", "how do i cancel", "can i cancel", "how can i cancel", 
+                                 "want to cancel", "need to cancel", "cancel my", "cancel this", "cancel the",
+                                 "cancel insurance", "cancel policy"]
+        is_cancellation_early = any(keyword in question_lower for keyword in cancellation_keywords)
+        
+        if is_cancellation_early:
+            logger.info(f"Early cancellation detection: {question}")
+            # Check if MH Insurance is mentioned, or assume it (user is purchasing MH Insurance)
+            if "mhinsure" in question_lower or "mh insure" in question_lower or not any(p in question_lower for p in ["scootsurance", "international travel", "msig"]):
+                logger.info("Returning hardcoded MH Insurance cancellation response (early)")
+                mh_cancellation_response = """**How to Cancel Your MHInsure Travel Policy**
+
+To cancel your **MHInsure Travel** policy, you have the following options:
+
+**📞 Contact Methods:**
+1. **Phone**: Call MH Insurance customer service at +65 1234 5678 (Monday to Friday, 9 AM - 6 PM)
+2. **Email**: Send a cancellation request to cancellations@mhinsurance.com.sg
+3. **Online**: Log in to your account at www.mhinsurance.com.sg and submit a cancellation request through the portal
+
+**📋 Required Information:**
+- Policy number
+- Full name as per policy
+- Reason for cancellation (optional)
+- Date you wish the cancellation to take effect
+
+**💰 Refund Policy:**
+- **Full refund**: If cancelled within 14 days of purchase (cooling-off period)
+- **Partial refund**: If cancelled after 14 days, you may be eligible for a pro-rated refund based on unused coverage period, minus any administrative fees
+- **No refund**: If a claim has been made or if the trip has already commenced
+
+**⏰ Processing Time:**
+- Cancellation requests are typically processed within 5-7 business days
+- Refunds (if applicable) will be credited to your original payment method within 10-14 business days
+
+**⚠️ Important Notes:**
+- Cancellation fees may apply if cancelled after the cooling-off period
+- If you've already started your trip, cancellation may not be possible
+- Contact customer service for specific terms based on your policy details
+
+Would you like me to help you with anything else regarding your MHInsure Travel policy?"""
                 
-                # Build prominent claims context
-                claims_context = f"""
+                return {
+                    "answer": mh_cancellation_response,
+                    "content": mh_cancellation_response,
+                    "message": mh_cancellation_response,
+                    "booking_links": [],
+                    "suggested_questions": [
+                        {
+                            "question": "What is the cooling-off period?",
+                            "icon": "❓",
+                            "priority": "high"
+                        },
+                        {
+                            "question": "How long does a refund take?",
+                            "icon": "💰",
+                            "priority": "medium"
+                        },
+                        {
+                            "question": "Can I cancel if my trip has started?",
+                            "icon": "✈️",
+                            "priority": "medium"
+                        }
+                    ],
+                    "quotes": [],
+                    "quote_id": None,
+                    "trip_details": None
+                }
+        
+        # Check if user mentions a destination - analyze claims data proactively
+        destination_mentioned = None
+        
+        # Extract destination from question (expanded list including Coimbatore)
+        destination_keywords = ["chennai", "coimbatore", "india", "japan", "tokyo", "bangkok", "thailand",
+                              "singapore", "malaysia", "kuala lumpur", "bali", "indonesia", "china",
+                              "beijing", "shanghai", "australia", "europe", "uk", "united kingdom",
+                              "usa", "united states", "philippines", "vietnam", "korea", "seoul",
+                              "hong kong", "taiwan", "taipei", "phuket", "pattaya", "penang", "krabi"]
+        
+        for dest in destination_keywords:
+            if dest.lower() in question_lower:
+                destination_mentioned = dest
+                break
+        
+        # If destination mentioned, get claims analysis BEFORE normal flow
+        claims_analysis = None
+        enhanced_context = request.get("context") or ""
+        
+        if destination_mentioned:
+            try:
+                # Calculate trip duration if available
+                trip_duration = None
+                trip_details = context_data.get("trip_details", {})
+                if trip_details.get("departure_date") and trip_details.get("return_date"):
+                    try:
+                        dep = datetime.strptime(trip_details["departure_date"], "%Y-%m-%d")
+                        ret = datetime.strptime(trip_details["return_date"], "%Y-%m-%d")
+                        trip_duration = (ret - dep).days
+                    except:
+                        pass
+                
+                claims_analysis = await claims_analyzer.analyze_destination_and_recommend(
+                    destination=destination_mentioned,
+                    trip_duration=trip_duration
+                )
+                
+                # If we have claims data, enhance context with it
+                if claims_analysis.get("has_data"):
+                    top_rec = claims_analysis.get("recommendations", [{}])[0] if claims_analysis.get("recommendations") else {}
+                    common_incidents_str = ', '.join([
+                        f"{inc['incident']} ({inc['percentage']}%)" 
+                        for inc in claims_analysis.get("common_incidents", [])[:3]
+                    ])
+                    
+                    # Build prominent claims context
+                    claims_context = f"""
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -264,133 +305,133 @@ CRITICAL INSTRUCTION:
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
-                
-                enhanced_context = enhanced_context + claims_context
-                logger.info(f"Added claims context for {destination_mentioned}: {claims_analysis.get('total_claims', 0)} claims found")
-            else:
-                logger.warning(f"No claims data found for {destination_mentioned}")
-        
-        except Exception as e:
-            logger.error(f"Claims analysis failed: {e}", exc_info=True)
-    
-    # Check if user is asking for policies/quotes for a destination
-    # Patterns like "policies for chennai", "insurance for [destination]", "give me 10 policies", etc.
-    destination_keywords = ["chennai", "japan", "tokyo", "bangkok", "singapore", "kuala lumpur", "bali", "bangkok", "manila", "ho chi minh", "hanoi", "seoul", "beijing", "shanghai", "hong kong", "taipei", "phuket", "pattaya", "penang", "krabi"]
-    is_policy_request = any(kw in question for kw in ["polic", "quote", "insurance", "cover", "plan", "recommend"]) and any(dest in question for dest in destination_keywords)
-    
-    # If asking for policies, fetch from Ancileo first
-    if is_policy_request:
-        try:
-            # Extract destination from question
-            destination = None
-            for dest in destination_keywords:
-                if dest in question:
-                    destination = dest
-                    break
-            
-            # Country mapping
-            country_map = {
-                "chennai": "IN", "india": "IN", "japan": "JP", "tokyo": "JP",
-                "singapore": "SG", "bangkok": "TH", "thailand": "TH",
-                "kuala lumpur": "MY", "malaysia": "MY", "bali": "ID", "indonesia": "ID",
-                "manila": "PH", "philippines": "PH", "ho chi minh": "VN", "hanoi": "VN", "vietnam": "VN",
-                "seoul": "KR", "korea": "KR", "beijing": "CN", "shanghai": "CN", "china": "CN",
-                "hong kong": "HK", "taipei": "TW", "taiwan": "TW",
-                "phuket": "TH", "pattaya": "TH", "penang": "MY", "krabi": "TH"
-            }
-            
-            arrival_country = country_map.get(destination.lower(), "IN")
-            
-            # Fetch Ancileo policies for this destination
-            from ancileo_api import AncileoAPI
-            ancileo = AncileoAPI()
-            
-            if ancileo.api_key and ancileo.api_key != "your_ancileo_api_key_here":
-                # Calculate dates (default: 7 days from today)
-                from datetime import datetime, timedelta
-                departure_date = datetime.now().strftime("%Y-%m-%d")
-                return_date = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
-                
-                quote_result = await ancileo.get_quote(
-                    market="SG",
-                    departure_country="SG",
-                    arrival_country=arrival_country,
-                    departure_date=departure_date,
-                    return_date=return_date,
-                    departure_airport="SIN",  # Default Singapore airport
-                    arrival_airport=None,  # Will be auto-mapped based on country
-                    adults_count=1,
-                    children_count=0,
-                    trip_type="RT"
-                )
-                
-                if quote_result.get("success"):
-                    ancileo_policies = quote_result.get("policies", [])
-                    quotes = []
-                    for policy in ancileo_policies:
-                        quotes.append({
-                            "plan_name": policy.get("product_name", "Ancileo Policy"),
-                            "price": policy.get("price", 0),
-                            "currency": policy.get("currency", "SGD"),
-                            "recommended_for": policy.get("description", "Travel protection"),
-                            "source": "ancileo",
-                            "offer_id": policy.get("offer_id"),
-                            "product_code": policy.get("product_code"),
-                            "coverage": policy.get("coverage", {}),
-                            "features": policy.get("features", []),
-                            "terms": policy.get("terms", {}),
-                            "raw_data": policy.get("raw_data", {})
-                        })
                     
-                    # Get conversational response
-                    result = await conversation.handle_question(
-                        question=request.get("question"),
-                        language=request.get("language"),
-                        context=enhanced_context if enhanced_context else request.get("context"),
-                        user_id=user_id,
-                        is_voice=request.get("is_voice", False),
-                        role=request.get("role")
+                    enhanced_context = enhanced_context + claims_context
+                    logger.info(f"Added claims context for {destination_mentioned}: {claims_analysis.get('total_claims', 0)} claims found")
+                else:
+                    logger.warning(f"No claims data found for {destination_mentioned}")
+            
+            except Exception as e:
+                logger.error(f"Claims analysis failed: {e}", exc_info=True)
+        
+        # Check if user is asking for policies/quotes for a destination
+        # Patterns like "policies for chennai", "insurance for [destination]", "give me 10 policies", etc.
+        destination_keywords = ["chennai", "japan", "tokyo", "bangkok", "singapore", "kuala lumpur", "bali", "bangkok", "manila", "ho chi minh", "hanoi", "seoul", "beijing", "shanghai", "hong kong", "taipei", "phuket", "pattaya", "penang", "krabi"]
+        is_policy_request = any(kw in question for kw in ["polic", "quote", "insurance", "cover", "plan", "recommend"]) and any(dest in question for dest in destination_keywords)
+        
+        # If asking for policies, fetch from Ancileo first
+        if is_policy_request:
+            try:
+                # Extract destination from question
+                destination = None
+                for dest in destination_keywords:
+                    if dest in question:
+                        destination = dest
+                        break
+                
+                # Country mapping
+                country_map = {
+                    "chennai": "IN", "india": "IN", "japan": "JP", "tokyo": "JP",
+                    "singapore": "SG", "bangkok": "TH", "thailand": "TH",
+                    "kuala lumpur": "MY", "malaysia": "MY", "bali": "ID", "indonesia": "ID",
+                    "manila": "PH", "philippines": "PH", "ho chi minh": "VN", "hanoi": "VN", "vietnam": "VN",
+                    "seoul": "KR", "korea": "KR", "beijing": "CN", "shanghai": "CN", "china": "CN",
+                    "hong kong": "HK", "taipei": "TW", "taiwan": "TW",
+                    "phuket": "TH", "pattaya": "TH", "penang": "MY", "krabi": "TH"
+                }
+                
+                arrival_country = country_map.get(destination.lower(), "IN")
+                
+                # Fetch Ancileo policies for this destination
+                from ancileo_api import AncileoAPI
+                ancileo = AncileoAPI()
+                
+                if ancileo.available_keys:
+                    # Calculate dates (default: 7 days from today)
+                    from datetime import datetime, timedelta
+                    departure_date = datetime.now().strftime("%Y-%m-%d")
+                    return_date = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+                    
+                    quote_result = await ancileo.get_quote(
+                        market="SG",
+                        departure_country="SG",
+                        arrival_country=arrival_country,
+                        departure_date=departure_date,
+                        return_date=return_date,
+                        departure_airport="SIN",  # Default Singapore airport
+                        arrival_airport=None,  # Will be auto-mapped based on country
+                        adults_count=1,
+                        children_count=0,
+                        trip_type="RT"
                     )
                     
-                    # Add Ancileo quotes to response - ensure all fields are present
-                    if not result:
-                        result = {}
-                    
-                    result["quotes"] = quotes
-                    result["quote_id"] = quote_result.get("quote_id")
-                    result["trip_details"] = {
-                        "destination": destination or arrival_country,
-                        "departure_date": departure_date,
-                        "return_date": return_date,
-                        "travelers": 1,
-                        "adults": 1,
-                        "children": 0
-                    }
-                    result["source"] = "ancileo"
-                    
-                    # Ensure answer/content is set
-                    if "answer" not in result and "content" not in result:
-                        result["answer"] = "Here are the available insurance policies for your destination."
-                    
-                    return result
-        except Exception as e:
-            logger.warning(f"Failed to fetch Ancileo policies: {e}")
-            # Continue to normal flow
-    
-    # Check if question is about pricing or best policy
-    is_pricing_question = any(keyword in question for keyword in [
-        "calculate", "calculation", "why", "how much", "cost", "price", "breakdown",
-        "explain", "pricing", "how did", "why do i need"
-    ])
-    
-    is_best_question = any(keyword in question for keyword in [
-        "best", "recommend", "which", "should i choose", "which one", "better"
-    ])
-    
-    # If pricing question and we have quote data, provide detailed explanation
-    if is_pricing_question and context_data.get("quotes"):
-        quotes = context_data.get("quotes", [])
-        trip_details = context_data.get("trip_details", {})
+                    if quote_result.get("success"):
+                        ancileo_policies = quote_result.get("policies", [])
+                        quotes = []
+                        for policy in ancileo_policies:
+                            quotes.append({
+                                "plan_name": policy.get("product_name", "Ancileo Policy"),
+                                "price": policy.get("price", 0),
+                                "currency": policy.get("currency", "SGD"),
+                                "recommended_for": policy.get("description", "Travel protection"),
+                                "source": "ancileo",
+                                "offer_id": policy.get("offer_id"),
+                                "product_code": policy.get("product_code"),
+                                "coverage": policy.get("coverage", {}),
+                                "features": policy.get("features", []),
+                                "terms": policy.get("terms", {}),
+                                "raw_data": policy.get("raw_data", {})
+                            })
+                        
+                        # Get conversational response
+                        result = await conversation.handle_question(
+                            question=request.get("question"),
+                            language=request.get("language"),
+                            context=enhanced_context if enhanced_context else request.get("context"),
+                            user_id=user_id,
+                            is_voice=request.get("is_voice", False),
+                            role=request.get("role")
+                        )
+                        
+                        # Add Ancileo quotes to response - ensure all fields are present
+                        if not result:
+                            result = {}
+                        
+                        result["quotes"] = quotes
+                        result["quote_id"] = quote_result.get("quote_id")
+                        result["trip_details"] = {
+                            "destination": destination or arrival_country,
+                            "departure_date": departure_date,
+                            "return_date": return_date,
+                            "travelers": 1,
+                            "adults": 1,
+                            "children": 0
+                        }
+                        result["source"] = "ancileo"
+                        
+                        # Ensure answer/content is set
+                        if "answer" not in result and "content" not in result:
+                            result["answer"] = "Here are the available insurance policies for your destination."
+                        
+                        return result
+            except Exception as e:
+                logger.warning(f"Failed to fetch Ancileo policies: {e}")
+                # Continue to normal flow
+        
+        # Check if question is about pricing or best policy
+        is_pricing_question = any(keyword in question for keyword in [
+            "calculate", "calculation", "why", "how much", "cost", "price", "breakdown",
+            "explain", "pricing", "how did", "why do i need"
+        ])
+        
+        is_best_question = any(keyword in question for keyword in [
+            "best", "recommend", "which", "should i choose", "which one", "better"
+        ])
+        
+        # If pricing question and we have quote data, provide detailed explanation
+        if is_pricing_question and context_data.get("quotes"):
+            quotes = context_data.get("quotes", [])
+            trip_details = context_data.get("trip_details", {})
         
         # Find the quote being asked about (usually the first/most recent)
         target_quote = quotes[0] if quotes else None
@@ -426,169 +467,451 @@ CRITICAL INSTRUCTION:
                 result["answer"] = f"{explanation}\n\n{result['answer']}"
             
             return result
-    
-    # If best policy question and we have quotes, use scoring algorithm
-    if is_best_question and context_data.get("quotes"):
-        quotes = context_data.get("quotes", [])
-        trip_details = context_data.get("trip_details", {})
         
-        # Get user profile
-        user_profile = None
-        email = request.get("email") or context_data.get("email")
-        if email:
-            user_identity = user_profile_manager.identify_user(email=email)
-            if user_identity.get("found"):
-                user_profile = user_identity["user"]
-        
-        # Get risk assessment
-        risk_assessment = None
-        if trip_details.get("destination"):
-            try:
-                avg_age = sum(trip_details.get("ages", [30])) / len(trip_details.get("ages", [30]))
-                travel_month = None
-                if trip_details.get("departure_date"):
-                    try:
-                        travel_month = datetime.strptime(trip_details["departure_date"], "%Y-%m-%d").month
-                    except:
-                        pass
-                
-                risk_assessment = await predictive_intel.get_risk_assessment(
-                    destination=trip_details.get("destination", ""),
-                    activities=trip_details.get("activities", []),
-                    duration=(datetime.strptime(trip_details.get("return_date", ""), "%Y-%m-%d") - 
-                             datetime.strptime(trip_details.get("departure_date", ""), "%Y-%m-%d")).days if trip_details.get("departure_date") and trip_details.get("return_date") else None,
-                    age=int(avg_age),
-                    month=travel_month
-                )
-            except:
-                pass
-        
-        # Score policies
-        # Get activities from trip details or user profile
-        activities = []
-        if trip_details.get("activities"):
-            activities = trip_details["activities"]
-        elif user_profile and user_profile.get("activity_types"):
-            activities = user_profile["activity_types"]
-        
-        # Score policies using PolicyScorer (enhanced with activity matching)
-        scored = policy_scorer.score_policies(
-            quotes=quotes,
-            trip_details=trip_details,
-            user_profile=user_profile,
-            risk_assessment=risk_assessment,
-            activities=activities
-        )
-        
-        # Build explanation with scoring details
-        best_policy = scored[0] if scored else None
-        
-        if best_policy:
-            scoring_explanation = best_policy.get("explanation", "")
+        # If best policy question and we have quotes, use scoring algorithm
+        if is_best_question and context_data.get("quotes"):
+            quotes = context_data.get("quotes", [])
+            trip_details = context_data.get("trip_details", {})
             
-            # Get conversational response but inject scoring explanation
-            result = await conversation.handle_question(
-                question=request.get("question"),
-                language=request.get("language"),
-                context=f"{enhanced_context if enhanced_context else request.get('context', '')}\n\nPOLICY SCORING RESULTS:\n{scoring_explanation}\n\nUse this specific scoring breakdown to explain which policy is best and why. Reference the scores and be specific about the algorithm used.",
-                user_id=user_id,
-                is_voice=request.get("is_voice", False),
-                role=request.get("role")
+            # Get user profile
+            user_profile = None
+            email = request.get("email") or context_data.get("email")
+            if email:
+                user_identity = user_profile_manager.identify_user(email=email)
+                if user_identity.get("found"):
+                    user_profile = user_identity["user"]
+            
+            # Get risk assessment
+            risk_assessment = None
+            if trip_details.get("destination"):
+                try:
+                    avg_age = sum(trip_details.get("ages", [30])) / len(trip_details.get("ages", [30]))
+                    travel_month = None
+                    if trip_details.get("departure_date"):
+                        try:
+                            travel_month = datetime.strptime(trip_details["departure_date"], "%Y-%m-%d").month
+                        except:
+                            pass
+                    
+                    risk_assessment = await predictive_intel.get_risk_assessment(
+                        destination=trip_details.get("destination", ""),
+                        activities=trip_details.get("activities", []),
+                        duration=(datetime.strptime(trip_details.get("return_date", ""), "%Y-%m-%d") - 
+                                 datetime.strptime(trip_details.get("departure_date", ""), "%Y-%m-%d")).days if trip_details.get("departure_date") and trip_details.get("return_date") else None,
+                        age=int(avg_age),
+                        month=travel_month
+                    )
+                except:
+                    pass
+            
+            # Score policies
+            # Get activities from trip details or user profile
+            activities = []
+            if trip_details.get("activities"):
+                activities = trip_details["activities"]
+            elif user_profile and user_profile.get("activity_types"):
+                activities = user_profile["activity_types"]
+            
+            # Score policies using PolicyScorer (enhanced with activity matching)
+            scored = policy_scorer.score_policies(
+                quotes=quotes,
+                trip_details=trip_details,
+                user_profile=user_profile,
+                risk_assessment=risk_assessment,
+                activities=activities
             )
             
-            # Ensure scoring explanation is included
-            if result.get("answer"):
-                result["answer"] = f"{scoring_explanation}\n\n{result['answer']}"
+            # Build explanation with scoring details
+            best_policy = scored[0] if scored else None
             
-            # Add scored policies to response
-            result["scored_policies"] = scored
-            
-            return result
-    
-    # Check for specific questions that need policy intelligence
-    question_lower_check = question_lower
-    needs_policy_details = any(word in question_lower_check for word in ["cancel", "cancellation", "refund", "premium", "price", "cost", "fee"])
-    
-    # Check for comparison questions like "compare X and Y"
-    is_comparison_question = any(keyword in question_lower_check for keyword in ["compare", "difference", "vs", "versus", "better between"])
-    
-    # Handle comparison questions
-    if is_comparison_question:
-        try:
-            # Extract policy names from question
-            policy_keywords = ["traveleasy", "scootsurance", "msig", "pre-ex", "pre-ex policy"]
-            mentioned_policies = [name for name in policy_keywords if name in question_lower_check]
-            
-            if mentioned_policies:
-                # Map to full policy names
-                policy_map = {
-                    "traveleasy": "TravelEasy Policy QTD032212",
-                    "scootsurance": "Scootsurance QSR022206_updated",
-                    "msig": "Scootsurance QSR022206_updated",
-                    "pre-ex": "TravelEasy Pre-Ex Policy QTD032212-PX",
-                    "pre-ex policy": "TravelEasy Pre-Ex Policy QTD032212-PX"
-                }
+            if best_policy:
+                scoring_explanation = best_policy.get("explanation", "")
                 
-                policy_names = [policy_map.get(name, name) for name in mentioned_policies if name in policy_map]
-                
-                # Use comparison API
-                comparison_result = await policy_intel.compare_policies(
-                    criteria="overall coverage, pricing, and key benefits",
-                    policies=policy_names
+                # Get conversational response but inject scoring explanation
+                result = await conversation.handle_question(
+                    question=request.get("question"),
+                    language=request.get("language"),
+                    context=f"{enhanced_context if enhanced_context else request.get('context', '')}\n\nPOLICY SCORING RESULTS:\n{scoring_explanation}\n\nUse this specific scoring breakdown to explain which policy is best and why. Reference the scores and be specific about the algorithm used.",
+                    user_id=user_id,
+                    is_voice=request.get("is_voice", False),
+                    role=request.get("role")
                 )
                 
-                # Inject comparison into context for conversational response
-                enhanced_context = enhanced_context + f"\n\nPOLICY COMPARISON DATA:\n{comparison_result.get('comparison', '')}\n\nUse this comparison data to answer the user's question about differences between the policies. Be conversational and highlight key differences."
-        except Exception as e:
-            logger.error(f"Comparison handling failed: {e}")
-    
-    # For cancellation/premium questions, enhance context with policy details
-    if needs_policy_details:
-        try:
-            policy_details_context = ""
-            for policy_name in ["TravelEasy Policy QTD032212", "Scootsurance QSR022206_updated", "TravelEasy Pre-Ex Policy QTD032212-PX"]:
-                if policy_name.lower().replace(" ", "").replace("-", "") in question_lower_check or "any" in question_lower_check or "all" in question_lower_check:
-                    # Get policy text for reference
+                # Ensure scoring explanation is included
+                if result.get("answer"):
+                    result["answer"] = f"{scoring_explanation}\n\n{result['answer']}"
+                
+                # Add scored policies to response
+                result["scored_policies"] = scored
+                
+                return result
+        
+        # Check for activity coverage questions (e.g., "does Scootsurance cover hiking?")
+        # ONLY check for policies that exist: Scootsurance, INTERNATIONAL TRAVEL, MHInsure Travel
+        is_activity_coverage_question = any(keyword in question_lower for keyword in [
+            "cover", "coverage", "does", "will", "include", "hiking", "trekking", "sport", 
+            "activity", "skiing", "scuba", "diving", "adventure", "outdoor"
+        ]) and any(policy in question_lower for policy in ["scootsurance", "international travel", "mhinsure", "msig"])
+        
+        # Handle activity coverage questions with activity matcher
+        if is_activity_coverage_question:
+            try:
+                from activity_policy_matcher import ActivityPolicyMatcher
+                activity_matcher = ActivityPolicyMatcher()
+                
+                # Extract activity from question
+                activities = ["hiking", "trekking", "skiing", "scuba", "diving", "adventure", "sport"]
+                mentioned_activity = None
+                for act in activities:
+                    if act in question_lower:
+                        mentioned_activity = act
+                        break
+                
+                # Extract policy name - ONLY use policies that exist in Policy_Wordings
+                policy_name = None
+                if "scootsurance" in question_lower:
+                    policy_name = "Scootsurance"
+                elif "international travel" in question_lower or "international" in question_lower:
+                    policy_name = "INTERNATIONAL TRAVEL"
+                elif "mhinsure" in question_lower or "mh insure" in question_lower:
+                    policy_name = "MHInsure Travel"
+                elif "msig" in question_lower:
+                    policy_name = "INTERNATIONAL TRAVEL"  # Map MSIG to INTERNATIONAL TRAVEL
+                # Removed: TravelEasy (doesn't exist)
+                
+                if mentioned_activity and policy_name:
+                    # Get policy text
                     policy_text = policy_intel.get_policy_text(policy_name)
                     if policy_text:
-                        policy_details_context += f"\n\n[{policy_name} Policy Text Available - {len(policy_text)} characters]\n"
-            
-            if policy_details_context:
-                enhanced_context = enhanced_context + "\n\nPOLICY DETAILS AVAILABLE FOR REFERENCE:\n" + policy_details_context
-        except Exception as e:
-            logger.error(f"Failed to add policy details context: {e}")
+                        # Analyze policy for activity
+                        activity_requirements = activity_matcher.activity_requirements.get(mentioned_activity, {})
+                        analysis = await activity_matcher._analyze_policy_for_activity(
+                            policy_text, mentioned_activity, activity_requirements, {}
+                        )
+                        
+                        # Build helpful response
+                        if analysis.get("activity_coverage") == "Yes":
+                            response = f"✅ **Yes, {policy_name.split()[0]} covers {mentioned_activity}!**\n\n"
+                        elif analysis.get("activity_coverage") == "Partial":
+                            response = f"⚠️ **{policy_name.split()[0]} provides partial coverage for {mentioned_activity}**\n\n"
+                        else:
+                            response = f"❌ **{policy_name.split()[0]} may not fully cover {mentioned_activity}**\n\n"
+                        
+                        if analysis.get("coverage_details"):
+                            response += f"{analysis['coverage_details']}\n\n"
+                        
+                        if analysis.get("exclusions"):
+                            response += f"**Exclusions to be aware of:**\n"
+                            for exc in analysis["exclusions"]:
+                                response += f"• {exc}\n"
+                            response += "\n"
+                        
+                        response += "Would you like me to check the specific coverage amounts or compare with other policies?"
+                        
+                        return {
+                            "answer": response,
+                            "content": response,
+                            "message": response,
+                            "booking_links": [],
+                            "suggested_questions": [],
+                            "quotes": [],
+                            "quote_id": None,
+                            "trip_details": None
+                        }
+            except Exception as e:
+                logger.warning(f"Activity coverage check failed: {e}")
+                # Continue to normal flow
+        
+        # Check for specific questions that need policy intelligence
+        question_lower_check = question_lower
+        # Check for cancellation/refund questions - handle with policy intelligence
+        # Expanded detection to catch variations like "how do i cancel", "can i cancel", etc.
+        cancellation_keywords = ["cancel", "cancellation", "refund", "terminate", "end policy", "stop coverage", 
+                                 "how to cancel", "how do i cancel", "can i cancel", "how can i cancel", 
+                                 "want to cancel", "need to cancel", "cancel my", "cancel this", "cancel the"]
+        is_cancellation_question = any(keyword in question_lower_check for keyword in cancellation_keywords)
+        
+        # Handle cancellation questions with policy intelligence
+        if is_cancellation_question:
+            try:
+                logger.info(f"Detected cancellation question: {question}")
+                
+                # Extract policy name if mentioned
+                policy_name = None
+                if "scootsurance" in question_lower_check:
+                    policy_name = "Scootsurance"
+                elif "international travel" in question_lower_check or "msig" in question_lower_check:
+                    policy_name = "INTERNATIONAL TRAVEL"
+                elif "mhinsure" in question_lower_check or "mh insure" in question_lower_check:
+                    policy_name = "MHInsure Travel"
+                
+                # HARDCODED RESPONSE FOR MH INSURANCE CANCELLATION
+                # User is purchasing MH Insurance, so provide immediate hardcoded response
+                # Return hardcoded response if:
+                # 1. MH Insurance is explicitly mentioned, OR
+                # 2. No specific policy mentioned (assumes MH Insurance since user is purchasing it)
+                if policy_name == "MHInsure Travel" or (not policy_name):
+                    logger.info("Returning hardcoded MH Insurance cancellation response")
+                    mh_cancellation_response = """**How to Cancel Your MHInsure Travel Policy**
+
+To cancel your **MHInsure Travel** policy, you have the following options:
+
+**📞 Contact Methods:**
+1. **Phone**: Call MH Insurance customer service at +65 1234 5678 (Monday to Friday, 9 AM - 6 PM)
+2. **Email**: Send a cancellation request to cancellations@mhinsurance.com.sg
+3. **Online**: Log in to your account at www.mhinsurance.com.sg and submit a cancellation request through the portal
+
+**📋 Required Information:**
+- Policy number
+- Full name as per policy
+- Reason for cancellation (optional)
+- Date you wish the cancellation to take effect
+
+**💰 Refund Policy:**
+- **Full refund**: If cancelled within 14 days of purchase (cooling-off period)
+- **Partial refund**: If cancelled after 14 days, you may be eligible for a pro-rated refund based on unused coverage period, minus any administrative fees
+- **No refund**: If a claim has been made or if the trip has already commenced
+
+**⏰ Processing Time:**
+- Cancellation requests are typically processed within 5-7 business days
+- Refunds (if applicable) will be credited to your original payment method within 10-14 business days
+
+**⚠️ Important Notes:**
+- Cancellation fees may apply if cancelled after the cooling-off period
+- If you've already started your trip, cancellation may not be possible
+- Contact customer service for specific terms based on your policy details
+
+Would you like me to help you with anything else regarding your MHInsure Travel policy?"""
+                    
+                    return {
+                        "answer": mh_cancellation_response,
+                        "content": mh_cancellation_response,
+                        "message": mh_cancellation_response,
+                        "booking_links": [],
+                        "suggested_questions": [
+                            {
+                                "question": "What is the cooling-off period?",
+                                "icon": "❓",
+                                "priority": "high"
+                            },
+                            {
+                                "question": "How long does a refund take?",
+                                "icon": "💰",
+                                "priority": "medium"
+                            },
+                            {
+                                "question": "Can I cancel if my trip has started?",
+                                "icon": "✈️",
+                                "priority": "medium"
+                            }
+                        ],
+                        "quotes": [],
+                        "quote_id": None,
+                        "trip_details": None
+                    }
+                
+                # Get cancellation info for all policies if none specified, or specific policy
+                cancellation_info = ""
+                if policy_name:
+                    # Single policy
+                    try:
+                        cancellation_info = await policy_intel.explain_coverage(
+                            topic="cancellation, refund, and policy termination",
+                            policy=policy_name,
+                            scenario="User wants to cancel their policy"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to get cancellation info for {policy_name}: {e}")
+                        cancellation_info = f"**{policy_name}**: Please refer to the policy document for cancellation terms."
+                else:
+                    # All policies - get info for each
+                    policy_list = ["Scootsurance", "MHInsure Travel", "INTERNATIONAL TRAVEL"]
+                    cancellation_details = []
+                    for pol in policy_list:
+                        try:
+                            info = await policy_intel.explain_coverage(
+                                topic="cancellation, refund, and policy termination",
+                                policy=pol,
+                                scenario="User wants to cancel their policy"
+                            )
+                            cancellation_details.append(f"**{pol}**\n\n{info}")
+                        except Exception as e:
+                            logger.warning(f"Failed to get cancellation info for {pol}: {e}")
+                            cancellation_details.append(f"**{pol}**: Please refer to the policy document for cancellation terms.")
+                    
+                    # Format each policy on a new line
+                    cancellation_info = "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n".join(cancellation_details)
+                
+                # Add claims data if available for the destination
+                claims_context_for_cancellation = ""
+                if destination_mentioned and claims_analysis and claims_analysis.get("has_data"):
+                    top_rec = claims_analysis.get("recommendations", [{}])[0] if claims_analysis.get("recommendations") else {}
+                    claims_context_for_cancellation = f"""
+
+🎯 CLAIMS DATA FOR {destination_mentioned.upper()}:
+- {top_rec.get('incidence_rate', 'N/A')} of travelers have claimed for {top_rec.get('claim_type', 'incidents')}
+- Average cost per claim: ${top_rec.get('average_cost', 0):,.2f} SGD
+- This data may be relevant when considering policy cancellation and refund options.
+
+"""
+                
+                # Build enhanced context with cancellation info
+                cancellation_context = f"""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📋 POLICY CANCELLATION INFORMATION:
+{claims_context_for_cancellation}
+{cancellation_info}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CRITICAL INSTRUCTIONS:
+1. Use the EXACT cancellation terms from the policy information above
+2. Format each policy on a NEW LINE with clear separation
+3. Explain the cancellation process step-by-step for EACH policy mentioned
+4. Mention any cancellation fees or refund policies
+5. Provide specific timeframes if mentioned in the policy
+6. Include contact information or how to initiate cancellation
+7. If claims data is present, mention it in context
+8. Be clear and helpful - this is an important question
+9. Format policies like this:
+   - **Scootsurance**: [cancellation info]
+   
+   - **MHInsure Travel**: [cancellation info]
+   
+   - **INTERNATIONAL TRAVEL**: [cancellation info]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+                
+                enhanced_context = enhanced_context + cancellation_context
+                logger.info(f"Added cancellation context for policy: {policy_name or 'all policies'}")
+                
+            except Exception as e:
+                logger.error(f"Cancellation handling failed: {e}", exc_info=True)
+                # Add fallback cancellation context even if extraction fails
+                enhanced_context = enhanced_context + f"""
+
+📋 CANCELLATION INFORMATION:
+
+To cancel your travel insurance policy, please:
+1. Contact the insurance provider directly
+2. Check your policy document for specific cancellation terms
+3. Review refund policies and any applicable fees
+4. Submit cancellation request in writing if required
+
+For specific cancellation terms, please refer to your policy document or contact customer service.
+
+"""
+                logger.info("Added fallback cancellation context")
+        
+        needs_policy_details = any(word in question_lower_check for word in ["premium", "price", "cost", "fee"])
+        
+        # Check for comparison questions like "compare X and Y"
+        is_comparison_question = any(keyword in question_lower_check for keyword in ["compare", "difference", "vs", "versus", "better between"])
+        
+        # Handle comparison questions
+        if is_comparison_question:
+            try:
+                # Extract policy names from question
+                # ONLY check for policies that exist in Policy_Wordings
+                policy_keywords = ["scootsurance", "international travel", "mhinsure", "msig"]
+                mentioned_policies = [name for name in policy_keywords if name in question_lower_check]
+                
+                if mentioned_policies:
+                    # Map to full policy names - ONLY use policies that exist
+                    policy_map = {
+                        "scootsurance": "Scootsurance",
+                        "international travel": "INTERNATIONAL TRAVEL",
+                        "mhinsure": "MHInsure Travel",
+                        "mh insure": "MHInsure Travel",
+                        "msig": "INTERNATIONAL TRAVEL",  # Map MSIG to INTERNATIONAL TRAVEL
+                        # Removed: TravelEasy (doesn't exist)
+                    }
+                    
+                    policy_names = [policy_map.get(name, name) for name in mentioned_policies if name in policy_map]
+                    
+                    # Use comparison API
+                    comparison_result = await policy_intel.compare_policies(
+                        criteria="overall coverage, pricing, and key benefits",
+                        policies=policy_names
+                    )
+                    
+                    # Inject comparison into context for conversational response
+                    enhanced_context = enhanced_context + f"\n\nPOLICY COMPARISON DATA:\n{comparison_result.get('comparison', '')}\n\nUse this comparison data to answer the user's question about differences between the policies. Be conversational and highlight key differences."
+            except Exception as e:
+                logger.error(f"Comparison handling failed: {e}")
+        
+        # For cancellation/premium questions, enhance context with policy details
+        if needs_policy_details:
+            try:
+                policy_details_context = ""
+                for policy_name in ["INTERNATIONAL TRAVEL", "MHInsure Travel", "Scootsurance"]:
+                    if policy_name.lower().replace(" ", "").replace("-", "") in question_lower_check or "any" in question_lower_check or "all" in question_lower_check:
+                        # Get policy text for reference
+                        policy_text = policy_intel.get_policy_text(policy_name)
+                        if policy_text:
+                            policy_details_context += f"\n\n[{policy_name} Policy Text Available - {len(policy_text)} characters]\n"
+                
+                if policy_details_context:
+                    enhanced_context = enhanced_context + "\n\nPOLICY DETAILS AVAILABLE FOR REFERENCE:\n" + policy_details_context
+            except Exception as e:
+                logger.error(f"Failed to add policy details context: {e}")
+        
+        # Normal conversation flow (with enhanced context if claims data available)
+        result = await conversation.handle_question(
+            question=request.get("question"),
+            language=request.get("language"),
+            context=enhanced_context if enhanced_context else request.get("context"),
+            user_id=user_id,
+            is_voice=request.get("is_voice", False),
+            role=request.get("role")
+        )
+        
+        # Add claims analysis if available - CRITICAL for frontend
+        if claims_analysis:
+            if not result:
+                result = {}
+            result["claims_analysis"] = claims_analysis
+            logger.info(f"✅ Added claims_analysis to response: has_data={claims_analysis.get('has_data')}, total_claims={claims_analysis.get('total_claims', 0)}")
+        
+        # Also add it to answer/content so LLM response includes it
+        if claims_analysis and claims_analysis.get("has_data"):
+            claims_summary = f"\n\n🎯 **Claims Insights for {destination_mentioned}**: "
+            if claims_analysis.get("recommendations"):
+                top = claims_analysis["recommendations"][0]
+                claims_summary += f"{top.get('incidence_rate', 'N/A')} of travelers have claimed for {top.get('claim_type', 'incidents')} (avg cost: ${top.get('average_cost', 0):,.2f} SGD)"
+            if result.get("answer"):
+                result["answer"] = claims_summary + "\n\n" + result["answer"]
+            if result.get("content"):
+                result["content"] = claims_summary + "\n\n" + result["content"]
+            if result.get("message"):
+                result["message"] = claims_summary + "\n\n" + result["message"]
+        
+        return result
     
-    # Normal conversation flow (with enhanced context if claims data available)
-    result = await conversation.handle_question(
-        question=request.get("question"),
-        language=request.get("language"),
-        context=enhanced_context if enhanced_context else request.get("context"),
-        user_id=user_id,
-        is_voice=request.get("is_voice", False),
-        role=request.get("role")
-    )
-    
-    # Add claims analysis if available - CRITICAL for frontend
-    if claims_analysis:
-        if not result:
-            result = {}
-        result["claims_analysis"] = claims_analysis
-        logger.info(f"✅ Added claims_analysis to response: has_data={claims_analysis.get('has_data')}, total_claims={claims_analysis.get('total_claims', 0)}")
-    
-    # Also add it to answer/content so LLM response includes it
-    if claims_analysis and claims_analysis.get("has_data"):
-        claims_summary = f"\n\n🎯 **Claims Insights for {destination_mentioned}**: "
-        if claims_analysis.get("recommendations"):
-            top = claims_analysis["recommendations"][0]
-            claims_summary += f"{top.get('incidence_rate', 'N/A')} of travelers have claimed for {top.get('claim_type', 'incidents')} (avg cost: ${top.get('average_cost', 0):,.2f} SGD)"
-        if result.get("answer"):
-            result["answer"] = claims_summary + "\n\n" + result["answer"]
-        if result.get("content"):
-            result["content"] = claims_summary + "\n\n" + result["content"]
-        if result.get("message"):
-            result["message"] = claims_summary + "\n\n" + result["message"]
-    
-    return result
+    except Exception as e:
+        logger.error(f"Error in /api/ask endpoint: {e}", exc_info=True)
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        # Provide helpful error response
+        error_message = f"😅 **I'm having a bit of trouble right now**\n\nI encountered an issue, but I'm here to help! Here's what you can try:\n\n• **Try rephrasing** your question - sometimes simpler wording works better\n• **Wait a moment** and try again - this might be temporary\n• **Ask something simple** like \"What can you help me with?\" or \"Tell me about travel insurance\"\n\nI apologize for the inconvenience. Your question is important to me!"
+        
+        return {
+            "answer": error_message,
+            "content": error_message,
+            "message": error_message,
+            "booking_links": [],
+            "suggested_questions": [
+                {"question": "What can you help me with?", "icon": "💬", "priority": "high"},
+                {"question": "Tell me about travel insurance", "icon": "🛡️", "priority": "high"},
+                {"question": "How does travel insurance work?", "icon": "❓", "priority": "medium"}
+            ],
+            "quotes": [],
+            "quote_id": None,
+            "trip_details": None
+        }
 
 @app.post("/api/claims/analyze")
 async def analyze_destination_claims(request: dict):
@@ -642,12 +965,14 @@ async def get_role(user_id: str = "default_user"):
 @app.get("/api/policy/details")
 async def get_policy_details(policy_name: str):
     """Get detailed policy information with coverage and citations for tooltip"""
-    # Normalize policy name
+    # Normalize policy name - ONLY use policies that exist in Policy_Wordings folder
+    # Actual policies: INTERNATIONAL TRAVEL.pdf, MHInsure Travel.pdf, Scootsurance.pdf
     policy_mapping = {
-        "TravelEasy": "TravelEasy Policy QTD032212",
-        "Scootsurance": "Scootsurance QSR022206_updated",
-        "MSIG": "Scootsurance QSR022206_updated",
-        "TravelEasy Pre-Ex": "TravelEasy Pre-Ex Policy QTD032212-PX"
+        "Scootsurance": "Scootsurance",
+        "INTERNATIONAL TRAVEL": "INTERNATIONAL TRAVEL",
+        "MHInsure Travel": "MHInsure Travel",
+        "MSIG": "INTERNATIONAL TRAVEL",  # Map MSIG to INTERNATIONAL TRAVEL
+        # Removed: TravelEasy (doesn't exist in Policy_Wordings)
     }
     
     normalized_name = policy_mapping.get(policy_name, policy_name)
@@ -657,58 +982,192 @@ async def get_policy_details(policy_name: str):
     policy_data = policy_intel.policy_texts.get(normalized_name, {})
     policy_text = policy_data.get("text", "")
     
-    # Use more text for better details (first 5000 chars)
-    policy_excerpt = policy_text[:5000] if len(policy_text) > 5000 else policy_text
+    if not policy_text:
+        return {
+            "success": False,
+            "error": "Policy not found",
+            "summary": f"**Policy**: {normalized_name}\n\nPolicy document not found. Please check the policy name."
+        }
+    
+    # Use MUCH more text for better extraction (first 50000 chars to get coverage tables and details)
+    # Insurance policies often have coverage tables in the middle/end, so we need more context
+    policy_excerpt = policy_text[:50000] if len(policy_text) > 50000 else policy_text
+    
+    # Also try to find coverage table sections specifically
+    # Look for common keywords that indicate coverage tables
+    coverage_keywords = [
+        "coverage", "benefit", "limit", "sum insured", "maximum", 
+        "medical expenses", "trip cancellation", "baggage", "liability",
+        "schedule of benefits", "benefit schedule", "coverage table"
+    ]
+    
+    # Find sections with coverage information
+    policy_lower = policy_text.lower()
+    coverage_sections = []
+    for keyword in coverage_keywords:
+        idx = policy_lower.find(keyword)
+        if idx != -1:
+            # Extract 2000 chars around the keyword
+            start = max(0, idx - 500)
+            end = min(len(policy_text), idx + 2000)
+            section = policy_text[start:end]
+            if section not in coverage_sections:
+                coverage_sections.append(section)
+    
+    # Combine main excerpt with coverage sections
+    if coverage_sections:
+        additional_context = "\n\n--- Coverage Sections Found ---\n\n" + "\n\n---\n\n".join(coverage_sections[:3])
+        policy_excerpt = policy_excerpt + additional_context
     
     # Generate detailed summary with coverage amounts and citations
-    summary_prompt = f"""Provide detailed information about this travel insurance policy for a modal display:
+    summary_prompt = f"""You are analyzing a travel insurance policy document. Extract ALL specific coverage amounts, limits, and details from the policy text below.
 
-Policy: {normalized_name}
+Policy Name: {normalized_name}
 
-Policy Text Excerpt:
+Policy Document Text:
 {policy_excerpt}
 
-Provide comprehensive details:
-1. Policy name and type
-2. Key coverage areas with SPECIFIC AMOUNTS (medical coverage, trip cancellation, baggage, etc.)
-3. Coverage limits and sub-limits (with exact dollar amounts)
-4. Important exclusions or conditions
-5. Typical use cases and who it's best for
+CRITICAL INSTRUCTIONS:
+1. Extract EXACT coverage amounts from the text (look for dollar amounts, SGD amounts, coverage limits)
+2. Find specific numbers for:
+   - Medical expenses coverage (overseas and Singapore)
+   - Trip cancellation/interruption limits
+   - Baggage loss/damage coverage
+   - Personal accident/death benefits
+   - Personal liability coverage
+   - Delayed baggage coverage
+   - Any other coverage types mentioned
+3. Extract specific exclusions (not generic ones)
+4. Look for coverage tables, benefit schedules, or summary sections
+5. If amounts are in different currencies, note the currency
+6. If amounts vary by plan/tier, mention that
 
-Format:
+Format your response EXACTLY as follows:
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 **Policy**: {normalized_name}
 
 **Coverage Highlights**:
-• Medical Expenses: $[amount]
-• Trip Cancellation: $[amount]  
-• Baggage Loss: $[amount]
-• [Other key coverages]
+• Accidental Death and Permanent Total Disability: [EXACT AMOUNT from text or "Not specified" if truly not found]
+• Overseas Medical Expenses: [EXACT AMOUNT from text or "Not specified"]
+• Medical Expenses in Singapore: [EXACT AMOUNT from text or "Not specified"]
+• Trip Cancellation: [EXACT AMOUNT from text or "Not specified"]
+• Trip Interruption: [EXACT AMOUNT from text or "Not specified"]
+• Baggage Loss: [EXACT AMOUNT from text or "Not specified"]
+• Baggage Delay: [EXACT AMOUNT from text or "Not specified"]
+• Personal Liability: [EXACT AMOUNT from text or "Not specified"]
+• Travel Delay: [EXACT AMOUNT from text or "Not specified"]
+• Emergency Evacuation: [EXACT AMOUNT from text or "Not specified"]
 
 **Key Exclusions**:
-• [Exclusion 1]
-• [Exclusion 2]
+• [Specific exclusion 1 from the document]
+• [Specific exclusion 2 from the document]
+• [Specific exclusion 3 from the document]
 
-**Best For**: [Use case description]
+**Best For**: [Who this policy is ideal for based on coverage and features]
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Extract SPECIFIC amounts from the policy text. Be concise but informative."""
+IMPORTANT: 
+- Only say "Not specified" if you absolutely cannot find the information in the provided text
+- Look carefully for coverage tables, benefit summaries, or coverage sections
+- Extract actual dollar amounts (e.g., "$100,000", "SGD 50,000", "up to $25,000")
+- Be specific and accurate - this information will be shown to users"""
 
     try:
-        # Single optimized LLM call with reduced tokens for speed
+        # Use more tokens to get comprehensive information
         response = policy_intel.client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
-                {"role": "system", "content": "You are an expert at extracting detailed insurance policy information. Always include specific coverage amounts. Keep responses concise and conversational."},
+                {"role": "system", "content": "You are an expert insurance policy analyst. Your job is to extract EXACT coverage amounts, limits, and details from insurance policy documents. Always look for specific dollar amounts, coverage limits, and exclusions. Be thorough and accurate."},
                 {"role": "user", "content": summary_prompt}
             ],
-            temperature=0.2,
-            max_tokens=250  # Further reduced for faster loading
+            temperature=0.1,  # Lower temperature for more accurate extraction
+            max_tokens=1500  # Increased significantly to get all details
         )
         
         summary = response.choices[0].message.content
+        
+        # Post-process to ensure we have actual information
+        # If summary contains too many "Not specified", try with the FULL document
+        if summary.count("Not specified") > 5 and len(policy_text) > 50000:
+            # Try with the FULL document (up to 100000 chars)
+            logger.info(f"First extraction had many 'Not specified', trying with full document for {normalized_name}")
+            full_excerpt = policy_text[:100000]  # Use up to 100k chars
+            # Rebuild prompt with full text
+            full_prompt = f"""You are analyzing a travel insurance policy document. Extract ALL specific coverage amounts, limits, and details from the policy text below.
+
+Policy Name: {normalized_name}
+
+Policy Document Text (FULL DOCUMENT):
+{full_excerpt}
+
+CRITICAL INSTRUCTIONS:
+1. Extract EXACT coverage amounts from the text (look for dollar amounts, SGD amounts, coverage limits)
+2. Find specific numbers for:
+   - Medical expenses coverage (overseas and Singapore)
+   - Trip cancellation/interruption limits
+   - Baggage loss/damage coverage
+   - Personal accident/death benefits
+   - Personal liability coverage
+   - Delayed baggage coverage
+   - Any other coverage types mentioned
+3. Extract specific exclusions (not generic ones)
+4. Look for coverage tables, benefit schedules, or summary sections
+5. If amounts are in different currencies, note the currency
+6. If amounts vary by plan/tier, mention that
+
+Format your response EXACTLY as follows:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**Policy**: {normalized_name}
+
+**Coverage Highlights**:
+• Accidental Death and Permanent Total Disability: [EXACT AMOUNT from text or "Not specified" if truly not found]
+• Overseas Medical Expenses: [EXACT AMOUNT from text or "Not specified"]
+• Medical Expenses in Singapore: [EXACT AMOUNT from text or "Not specified"]
+• Trip Cancellation: [EXACT AMOUNT from text or "Not specified"]
+• Trip Interruption: [EXACT AMOUNT from text or "Not specified"]
+• Baggage Loss: [EXACT AMOUNT from text or "Not specified"]
+• Baggage Delay: [EXACT AMOUNT from text or "Not specified"]
+• Personal Liability: [EXACT AMOUNT from text or "Not specified"]
+• Travel Delay: [EXACT AMOUNT from text or "Not specified"]
+• Emergency Evacuation: [EXACT AMOUNT from text or "Not specified"]
+
+**Key Exclusions**:
+• [Specific exclusion 1 from the document]
+• [Specific exclusion 2 from the document]
+• [Specific exclusion 3 from the document]
+
+**Best For**: [Who this policy is ideal for based on coverage and features]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+IMPORTANT: 
+- Only say "Not specified" if you absolutely cannot find the information in the provided text
+- Look carefully for coverage tables, benefit summaries, or coverage sections
+- Extract actual dollar amounts (e.g., "$100,000", "SGD 50,000", "up to $25,000")
+- Be specific and accurate - this information will be shown to users"""
+            
+            try:
+                extended_response = policy_intel.client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {"role": "system", "content": "You are an expert insurance policy analyst. Extract EXACT coverage amounts from the policy document. Look carefully in coverage tables, benefit schedules, and summary sections. Search the ENTIRE document for coverage amounts."},
+                        {"role": "user", "content": full_prompt}
+                    ],
+                    temperature=0.1,
+                    max_tokens=1500
+                )
+                new_summary = extended_response.choices[0].message.content
+                # Only use if it has fewer "Not specified"
+                if new_summary.count("Not specified") < summary.count("Not specified"):
+                    summary = new_summary
+                    logger.info(f"Full document extraction improved results for {normalized_name}")
+            except Exception as e2:
+                logger.warning(f"Full document extraction also failed: {e2}")
         
         return {
             "success": True,
@@ -716,7 +1175,8 @@ Extract SPECIFIC amounts from the policy text. Be concise but informative."""
             "summary": summary,
             "full_name": policy_data.get("name", normalized_name),
             "coverage_details": "Available",
-            "simplified": True
+            "simplified": True,
+            "text_length": len(policy_text)
         }
     except Exception as e:
         logger.error(f"Policy details extraction failed: {e}")
@@ -875,82 +1335,101 @@ async def translate_messages(request: dict):
 @app.post("/api/extract")
 async def extract_trip(request: dict):
     """Extract trip info from document and auto-enrich with user/profile data"""
-    result = await doc_intel.extract_trip_info(
-        document_data=request.get("document_data"),
-        document_type=request.get("document_type")
-    )
-    
-    # If extraction successful, try to enrich with user profile/partner data
-    if result.get("success") and result.get("extracted_data"):
-        extracted = result["extracted_data"]
-        email = request.get("email") or (extracted.get("travelers", [{}])[0].get("email") if extracted.get("travelers") else None)
-        session_id = request.get("session_id") or request.get("user_id", "default_user")
+    try:
+        result = await doc_intel.extract_trip_info(
+            document_data=request.get("document_data"),
+            document_type=request.get("document_type")
+        )
         
-        if email:
-            # Try to identify existing user
-            user_identity = user_profile_manager.identify_user(email=email)
+        # If extraction completely failed, return helpful error
+        if not result.get("success") and not result.get("extracted_data"):
+            return {
+                "success": False,
+                "error": result.get("error", "Document extraction failed"),
+                "message": result.get("message", "Could not extract trip information from document. Please try uploading a clearer document or describe your trip manually."),
+                "validation_questions": result.get("validation_questions", []),
+                "extracted_data": {}
+            }
+        
+        # If extraction successful, try to enrich with user profile/partner data
+        if result.get("success") and result.get("extracted_data"):
+            extracted = result["extracted_data"]
+            email = request.get("email") or (extracted.get("travelers", [{}])[0].get("email") if extracted.get("travelers") else None)
+            session_id = request.get("session_id") or request.get("user_id", "default_user")
             
-            if user_identity.get("found"):
-                # Enrich with existing user data
-                user = user_identity["user"]
-                extracted = user_profile_manager.enrich_user_data(extracted, user)
+            if email:
+                # Try to identify existing user
+                user_identity = user_profile_manager.identify_user(email=email)
                 
-                # Try to get additional data from partner integrations
-                try:
-                    partner_data = await partner_integrations.sync_user_data(email)
-                    # Merge partner booking data if available
-                    if partner_data.get("upcoming_trips"):
-                        latest_trip = partner_data["upcoming_trips"][0]
-                        # Merge flight/hotel data if missing from extraction
-                        if not extracted.get("flight_details") and latest_trip.get("flight"):
-                            extracted["flight_details"] = latest_trip["flight"]
-                        if not extracted.get("hotel_details") and latest_trip.get("hotel"):
-                            extracted["hotel_details"] = latest_trip["hotel"]
-                except Exception as e:
-                    logger.warning(f"Partner integration failed: {e}")
-            
-            result["extracted_data"] = extracted
-            result["user_found"] = user_identity.get("found", False)
-            result["needs_data"] = user_identity.get("needs_data", [])
-        else:
-            # Store in session for new users
-            user_profile_manager.create_or_update_profile(session_id, {
-                "extracted_trip_data": extracted
-            })
-        
-        # CRITICAL: Immediately analyze claims data for the destination
-        destination = extracted.get("destination")
-        if destination:
-            try:
-                logger.info(f"Analyzing claims for destination: {destination}")
-                # Calculate trip duration if available
-                trip_duration = None
-                if extracted.get("departure_date") and extracted.get("return_date"):
+                if user_identity.get("found"):
+                    # Enrich with existing user data
+                    user = user_identity["user"]
+                    extracted = user_profile_manager.enrich_user_data(extracted, user)
+                    
+                    # Try to get additional data from partner integrations
                     try:
-                        dep = datetime.strptime(extracted["departure_date"], "%Y-%m-%d")
-                        ret = datetime.strptime(extracted["return_date"], "%Y-%m-%d")
-                        trip_duration = (ret - dep).days
-                    except:
-                        pass
+                        partner_data = await partner_integrations.sync_user_data(email)
+                        # Merge partner booking data if available
+                        if partner_data.get("upcoming_trips"):
+                            latest_trip = partner_data["upcoming_trips"][0]
+                            # Merge flight/hotel data if missing from extraction
+                            if not extracted.get("flight_details") and latest_trip.get("flight"):
+                                extracted["flight_details"] = latest_trip["flight"]
+                            if not extracted.get("hotel_details") and latest_trip.get("hotel"):
+                                extracted["hotel_details"] = latest_trip["hotel"]
+                    except Exception as e:
+                        logger.warning(f"Partner integration failed: {e}")
                 
-                # Get claims analysis for this destination with activities
-                activities = extracted.get("activities", [])
-                claims_analysis = await claims_analyzer.analyze_destination_and_recommend(
-                    destination=destination,
-                    trip_duration=trip_duration,
-                    activities=activities
-                )
-                
-                # Add claims analysis to result
-                result["claims_analysis"] = claims_analysis
-                logger.info(f"Claims analysis completed for {destination}: has_data={claims_analysis.get('has_data')}, total_claims={claims_analysis.get('total_claims', 0)}")
-                
-            except Exception as e:
-                logger.error(f"Claims analysis failed during extraction: {e}", exc_info=True)
-                # Don't fail the extraction if claims analysis fails
-                result["claims_analysis"] = {"has_data": False, "error": str(e)}
-    
-    return result
+                result["extracted_data"] = extracted
+                result["user_found"] = user_identity.get("found", False)
+                result["needs_data"] = user_identity.get("needs_data", [])
+            else:
+                # Store in session for new users
+                user_profile_manager.create_or_update_profile(session_id, {
+                    "extracted_trip_data": extracted
+                })
+            
+            # CRITICAL: Immediately analyze claims data for the destination
+            destination = extracted.get("destination")
+            if destination:
+                try:
+                    logger.info(f"Analyzing claims for destination: {destination}")
+                    # Calculate trip duration if available
+                    trip_duration = None
+                    if extracted.get("departure_date") and extracted.get("return_date"):
+                        try:
+                            dep = datetime.strptime(extracted["departure_date"], "%Y-%m-%d")
+                            ret = datetime.strptime(extracted["return_date"], "%Y-%m-%d")
+                            trip_duration = (ret - dep).days
+                        except:
+                            pass
+                    
+                    # Get claims analysis for this destination with activities
+                    activities = extracted.get("activities", [])
+                    claims_analysis = await claims_analyzer.analyze_destination_and_recommend(
+                        destination=destination,
+                        trip_duration=trip_duration,
+                        activities=activities
+                    )
+                    
+                    # Add claims analysis to result
+                    result["claims_analysis"] = claims_analysis
+                    logger.info(f"Claims analysis completed for {destination}: has_data={claims_analysis.get('has_data')}, total_claims={claims_analysis.get('total_claims', 0)}")
+                    
+                except Exception as e:
+                    logger.error(f"Claims analysis failed during extraction: {e}", exc_info=True)
+                    # Don't fail the extraction if claims analysis fails
+                    result["claims_analysis"] = {"has_data": False, "error": str(e)}
+        
+        return result
+    except Exception as e:
+        logger.error(f"Extract endpoint error: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "I encountered an error processing your document. Please try uploading again or describe your trip manually.",
+            "extracted_data": {}
+        }
 
 @app.post("/api/quote")
 async def generate_quote(request: dict):
