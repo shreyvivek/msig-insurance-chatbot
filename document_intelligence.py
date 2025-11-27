@@ -192,6 +192,29 @@ Extract all available information. Use null only for fields completely absent.""
             
             extracted = json.loads(response.choices[0].message.content)
             
+            # Normalize traveler names to remove repeated characters (common in PDF extraction)
+            if extracted.get("travelers"):
+                for traveler in extracted.get("travelers", []):
+                    if traveler.get("name"):
+                        # Remove consecutive duplicate characters (case-insensitive)
+                        name = traveler["name"]
+                        normalized_name = ""
+                        prev_char = ""
+                        for char in name:
+                            if char == " " or char.lower() != prev_char.lower():
+                                normalized_name += char
+                                prev_char = char if char != " " else prev_char
+                        # Clean up multiple spaces and capitalize properly
+                        normalized_name = " ".join(
+                            word.capitalize() 
+                            for word in normalized_name.split() 
+                            if word
+                        )
+                        traveler["name"] = normalized_name
+                        # Also normalize firstName if present
+                        if traveler.get("firstName"):
+                            traveler["firstName"] = normalized_name.split()[0] if normalized_name else ""
+            
             # Validate and enrich
             result = {
                 "success": True,
