@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react'
-import { Send, Mic, Volume2, Sparkles, Plane, Upload, X, History, ChevronLeft, ExternalLink, ShoppingCart, User, CreditCard, Mail, Phone, Calendar, MessageSquarePlus, Trash2 } from 'lucide-react'
+import { Send, Mic, Volume2, Sparkles, Plane, Upload, X, History, ChevronLeft, ChevronRight, ExternalLink, ShoppingCart, User, CreditCard, Mail, Phone, Calendar, MessageSquarePlus, Trash2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import UserOnboarding from '../components/UserOnboarding'
 
@@ -436,6 +436,17 @@ function PurchaseForm({ quote, quoteId, tripDetails, isOpen, onClose, onComplete
   const [currentTraveler, setCurrentTraveler] = useState({ name: '', age: 0, email: '', phone: '', dob: '' })
   const [paymentInfo, setPaymentInfo] = useState({ cardNumber: '', expiryDate: '', cvv: '', cardName: '' })
   const [isAutoFilling, setIsAutoFilling] = useState(false)
+  const [hasAutoFilled, setHasAutoFilled] = useState(false)
+
+  // Debug: Log tripDetails when form opens
+  useEffect(() => {
+    if (isOpen && tripDetails) {
+      console.log('📋 PurchaseForm opened with tripDetails:', tripDetails)
+      console.log('👥 Travelers data:', tripDetails.travelers)
+      console.log('📊 Pax count:', tripDetails.pax)
+      console.log('📄 Extracted data:', tripDetails.extracted_data)
+    }
+  }, [isOpen, tripDetails])
 
   useEffect(() => {
     if (!isOpen) {
@@ -444,26 +455,53 @@ function PurchaseForm({ quote, quoteId, tripDetails, isOpen, onClose, onComplete
       setTravelers([])
       setCurrentTraveler({ name: '', age: 0, email: '', phone: '', dob: '' })
       setPaymentInfo({ cardNumber: '', expiryDate: '', cvv: '', cardName: '' })
+      setIsAutoFilling(false)
+      setHasAutoFilled(false)
       return
     }
     
     if (isOpen && tripDetails) {
-      // Handle different tripDetails structures
+      // Handle different tripDetails structures - ONLY use extracted data, NO dummy data
       let initialTravelers: Array<{ name: string; age: number; email: string; phone: string; dob: string }> = []
       
-      if (Array.isArray(tripDetails.travelers)) {
-        // If travelers is an array, map it
+      // Get pax count from extracted data
+      const paxCount = tripDetails.pax || tripDetails.travelers?.length || 0
+      
+      if (Array.isArray(tripDetails.travelers) && tripDetails.travelers.length > 0) {
+        // If travelers is an array with data, map it - use ONLY extracted data
         initialTravelers = tripDetails.travelers.map((t: any) => ({
-          name: t.name || '',
+          name: t.name || (t.firstName && t.lastName ? `${t.firstName} ${t.lastName}`.trim() : t.firstName || ''),
           age: t.age || 0,
           email: t.email || '',
           phone: t.phone || '',
           dob: t.dob || t.dateOfBirth || ''
         }))
+        
+        // If we have pax count but travelers array is shorter, extend with empty entries
+        if (paxCount > initialTravelers.length) {
+          for (let i = initialTravelers.length; i < paxCount; i++) {
+            initialTravelers.push({
+              name: '',
+              age: 0,
+              email: '',
+              phone: '',
+              dob: ''
+            })
+          }
+        }
+      } else if (paxCount > 0) {
+        // If we have pax count but no travelers array, create empty slots
+        initialTravelers = Array(paxCount).fill(null).map(() => ({
+          name: '',
+          age: 0,
+          email: '',
+          phone: '',
+          dob: ''
+        }))
       } else if (tripDetails.travelers && typeof tripDetails.travelers === 'number') {
-        // If travelers is a number, create empty slots
-        const numTravelers = tripDetails.travelers
-        initialTravelers = Array(numTravelers).fill(null).map(() => ({
+        // If travelers is just a number, create empty slots
+        const numTravelersCount = tripDetails.travelers
+        initialTravelers = Array(numTravelersCount).fill(null).map(() => ({
           name: '',
           age: 0,
           email: '',
@@ -471,28 +509,30 @@ function PurchaseForm({ quote, quoteId, tripDetails, isOpen, onClose, onComplete
           dob: ''
         }))
       } else {
-        // Try to get count from adults + children
-        const numAdults = tripDetails.adults || 1
+        // Check for adults/children count (only if no other data)
+        const numAdults = tripDetails.adults || 0
         const numChildren = tripDetails.children || 0
         const totalTravelers = numAdults + numChildren
-        initialTravelers = Array(totalTravelers).fill(null).map((_, index) => ({
+        
+        if (totalTravelers > 0) {
+          initialTravelers = Array(totalTravelers).fill(null).map(() => ({
           name: '',
-          age: index < numAdults ? 25 : 10, // Default age
+            age: 0,
           email: '',
           phone: '',
           dob: ''
         }))
+        }
+      }
+      
+      // Only create one empty traveler if we have absolutely no data
+      if (initialTravelers.length === 0) {
+        initialTravelers = [{ name: '', age: 0, email: '', phone: '', dob: '' }]
       }
       
       setTravelers(initialTravelers)
       if (initialTravelers.length > 0) {
         setCurrentTraveler(initialTravelers[0])
-        setStep(1)
-      } else {
-        // If no travelers, create at least one empty slot
-        const emptyTraveler = { name: '', age: 0, email: '', phone: '', dob: '' }
-        setTravelers([emptyTraveler])
-        setCurrentTraveler(emptyTraveler)
         setStep(1)
       }
     } else if (isOpen && !tripDetails) {
@@ -504,22 +544,103 @@ function PurchaseForm({ quote, quoteId, tripDetails, isOpen, onClose, onComplete
     }
   }, [isOpen, tripDetails])
 
-  const handleAddTraveler = () => {
-    if (currentTraveler.name && currentTraveler.age > 0 && currentTraveler.email && currentTraveler.phone) {
+  // Save current traveler data before navigation
+  const saveCurrentTraveler = () => {
       const updated = [...travelers]
-      // Update existing traveler if editing, otherwise add new
-      if (step <= travelers.length) {
-        updated[step - 1] = currentTraveler
-      } else {
-        updated.push(currentTraveler)
-      }
+    // Ensure array is large enough
+    while (updated.length < step) {
+      updated.push({ name: '', age: 0, email: '', phone: '', dob: '' })
+    }
+    updated[step - 1] = { ...currentTraveler }
       setTravelers(updated)
-      
-      // Calculate numTravelers for this check
-      const totalTravelers = (() => {
-        if (!tripDetails) return Math.max(travelers.length, 1)
-        if (Array.isArray(tripDetails.travelers)) {
+  }
+
+  // Navigate to next passenger
+  const handleNext = () => {
+    saveCurrentTraveler()
+    
+    const totalTravelers = numTravelers
+    if (step < totalTravelers) {
+      const nextStep = step + 1
+      setStep(nextStep)
+      // Ensure travelers array is large enough
+      const updatedTravelers = [...travelers]
+      while (updatedTravelers.length < nextStep) {
+        updatedTravelers.push({ name: '', age: 0, email: '', phone: '', dob: '' })
+      }
+      setTravelers(updatedTravelers)
+      // Load next traveler data if it exists
+      if (updatedTravelers[nextStep - 1]) {
+        setCurrentTraveler(updatedTravelers[nextStep - 1])
+      } else {
+        setCurrentTraveler({ name: '', age: 0, email: '', phone: '', dob: '' })
+      }
+    } else if (step === totalTravelers) {
+      // Move to payment step
+      saveCurrentTraveler()
+      setStep(totalTravelers + 1)
+    }
+  }
+
+  // Navigate to previous passenger
+  const handlePrevious = () => {
+    saveCurrentTraveler()
+    
+    if (step > 1) {
+      const prevStep = step - 1
+      setStep(prevStep)
+      // Load previous traveler data
+      if (travelers[prevStep - 1]) {
+        setCurrentTraveler(travelers[prevStep - 1])
+      } else {
+        setCurrentTraveler({ name: '', age: 0, email: '', phone: '', dob: '' })
+      }
+    }
+  }
+
+  // Check if current traveler data is valid
+  const isCurrentTravelerValid = () => {
+    // For first passenger, require age OR DOB. For subsequent passengers, require DOB.
+    const hasAgeOrDOB = step === 1 
+      ? (currentTraveler.age > 0 || currentTraveler.dob) 
+      : !!currentTraveler.dob
+    
+    return currentTraveler.name && 
+           hasAgeOrDOB && 
+           currentTraveler.email && 
+           currentTraveler.phone
+  }
+
+  // Navigate to specific passenger page
+  const goToTraveler = (travelerIndex: number) => {
+    if (travelerIndex >= 1 && travelerIndex <= numTravelers) {
+      saveCurrentTraveler()
+      setStep(travelerIndex)
+      if (travelers[travelerIndex - 1]) {
+        setCurrentTraveler(travelers[travelerIndex - 1])
+      } else {
+        setCurrentTraveler({ name: '', age: 0, email: '', phone: '', dob: '' })
+      }
+    }
+  }
+
+  const handleAddTraveler = () => {
+    if (isCurrentTravelerValid()) {
+      handleNext()
+    }
+  }
+  
+  // Calculate number of travelers from tripDetails or travelers array
+  const numTravelers = (() => {
+    if (travelers.length > 0) {
+      return travelers.length
+    }
+    if (!tripDetails) return 1
+    if (Array.isArray(tripDetails.travelers) && tripDetails.travelers.length > 0) {
           return tripDetails.travelers.length
+        }
+    if (tripDetails.pax) {
+      return tripDetails.pax
         }
         if (typeof tripDetails.travelers === 'number') {
           return tripDetails.travelers
@@ -529,31 +650,30 @@ function PurchaseForm({ quote, quoteId, tripDetails, isOpen, onClose, onComplete
         return numAdults + numChildren
       })()
       
-      if (step < totalTravelers) {
-        // Move to next traveler
-        setStep(step + 1)
-        // Load next traveler if exists, otherwise clear
-        if (updated[step]) {
-          setCurrentTraveler(updated[step])
-        } else {
-          setCurrentTraveler({ name: '', age: 0, email: '', phone: '', dob: '' })
-        }
+  useEffect(() => {
+    // Pre-fill current traveler data when step changes
+    // BUT skip if we're currently autofilling (to prevent overwriting)
+    if (isAutoFilling) {
+      console.log('⏸️ Skipping useEffect sync during autofill')
+      return
+    }
+    
+    if (step <= numTravelers && travelers.length > 0) {
+      const travelerForStep = travelers[step - 1]
+      if (travelerForStep && (travelerForStep.name || travelerForStep.email || travelerForStep.phone)) {
+        console.log(`🔄 Syncing traveler ${step} from travelers array:`, travelerForStep)
+        setCurrentTraveler(travelerForStep)
       } else {
-        // Move to payment step
-        setStep(totalTravelers + 1)
+        // If no traveler data for this step, create empty entry
+        const updated = [...travelers]
+        while (updated.length < step) {
+          updated.push({ name: '', age: 0, email: '', phone: '', dob: '' })
+        }
+        setTravelers(updated)
+        setCurrentTraveler(updated[step - 1] || { name: '', age: 0, email: '', phone: '', dob: '' })
       }
     }
-  }
-  
-  useEffect(() => {
-    // Pre-fill current traveler data if editing existing
-    if (step <= travelers.length && travelers[step - 1]) {
-      setCurrentTraveler(travelers[step - 1])
-    } else if (step > travelers.length) {
-      // Clear for new traveler
-      setCurrentTraveler({ name: '', age: 0, email: '', phone: '', dob: '' })
-    }
-  }, [step, travelers])
+  }, [step, travelers, numTravelers, isAutoFilling])
 
   const handleComplete = () => {
     if (paymentInfo.cardNumber && paymentInfo.expiryDate && paymentInfo.cvv) {
@@ -569,82 +689,218 @@ function PurchaseForm({ quote, quoteId, tripDetails, isOpen, onClose, onComplete
       setTravelers([])
       setCurrentTraveler({ name: '', age: 0, email: '', phone: '', dob: '' })
       setPaymentInfo({ cardNumber: '', expiryDate: '', cvv: '', cardName: '' })
+      setHasAutoFilled(false)
     }
   }
 
   const handleAutoFill = async () => {
+    if (!tripDetails) {
+      console.warn('❌ No trip details available for autofill')
+      alert('No trip details found. Please upload your itinerary first.')
+      return
+    }
+    
+    console.log('🔄 Starting autofill with tripDetails:', tripDetails)
     setIsAutoFilling(true)
+    
+    // Load onboarding data from localStorage
+    const savedUserData = localStorage.getItem('wandersure_user_data')
+    const onboardingData = savedUserData ? JSON.parse(savedUserData) : null
+    console.log('👤 Onboarding data:', onboardingData)
     
     // Simulate AI auto-fill with animation
     const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
     
-    // Auto-fill travelers with smart defaults
-    const autoTravelers = travelers.map((t, idx) => {
-      // Use extracted data if available, otherwise smart defaults
-      const extractedName = tripDetails?.travelers?.[idx]?.name
-      const extractedAge = tripDetails?.travelers?.[idx]?.age || tripDetails?.ages?.[idx]
-      
-      return {
-        name: extractedName || `Traveler ${idx + 1}`,
-        age: extractedAge || (idx === 0 ? 35 : 32),
-        email: extractedName ? `${extractedName.toLowerCase().replace(/\s+/g, '.')}@example.com` : `traveler${idx + 1}@example.com`,
-        phone: `+65 9123 ${4567 + idx}`,
-        dob: ''
-      }
-    })
-    
-    // Animate filling each traveler
-    for (let i = 0; i < autoTravelers.length; i++) {
-      setStep(i + 1)
-      await delay(300)
-      setCurrentTraveler(autoTravelers[i])
-      await delay(500)
-      
-      // Auto-proceed to next
-      if (i < autoTravelers.length - 1) {
-        const updated = [...travelers]
-        updated[i] = autoTravelers[i]
-        setTravelers(updated)
-      }
+    // Helper function to calculate DOB from age (only if age exists and DOB doesn't)
+    const calculateDOBFromAge = (age: number): string => {
+      if (!age || age <= 0) return ''
+      const today = new Date()
+      const birthYear = today.getFullYear() - age
+      // Use mid-year as default (June 15)
+      return `${birthYear}-06-15`
     }
     
-    // Fill all travelers
-    setTravelers(autoTravelers)
-    await delay(300)
+    // Get the correct number of travelers - check multiple sources
+    const paxCount = tripDetails.pax || 
+                     (Array.isArray(tripDetails.travelers) ? tripDetails.travelers.length : 0) ||
+                     tripDetails.travelers ||
+                     1
     
-    // Move to payment
-    setStep(autoTravelers.length + 1)
+    console.log(`📊 Found ${paxCount} passengers`)
+    
+    // Get extracted travelers data - check multiple possible structures
+    const extractedTravelers = Array.isArray(tripDetails.travelers) 
+      ? tripDetails.travelers 
+      : tripDetails.extracted_data?.travelers || 
+        tripDetails.travelers || 
+        []
+    
+    // Also check for extracted_data wrapper
+    const extractedData = tripDetails.extracted_data || tripDetails
+    
+    console.log('👥 Extracted travelers:', extractedTravelers)
+    console.log('📄 Full extracted data:', extractedData)
+    
+    // Build travelers array - merge itinerary (priority) with onboarding (fallback)
+    const autoTravelers: Array<{ name: string; age: number; email: string; phone: string; dob: string }> = []
+    
+    // Ensure we have at least as many travelers as pax count
+    const actualTravelerCount = Math.max(paxCount, extractedTravelers.length || 0, 1)
+    
+    for (let idx = 0; idx < actualTravelerCount; idx++) {
+      const extractedTraveler = extractedTravelers[idx] || {}
+      
+      console.log(`🔍 Processing traveler ${idx + 1}:`, extractedTraveler)
+      
+      // MERGE LOGIC: Itinerary data takes priority, onboarding data is fallback
+      // Extract name - PRIORITY: itinerary > onboarding
+      let name = extractedTraveler.name || 
+                 (extractedTraveler.firstName && extractedTraveler.lastName ? 
+                   `${extractedTraveler.firstName} ${extractedTraveler.lastName}`.trim() :
+                   extractedTraveler.firstName || '') ||
+                 extractedData.travelers?.[idx]?.name ||
+                 (idx === 0 && onboardingData?.name) || // Use onboarding for first traveler
+                 ''
+      
+      // Extract age - PRIORITY: itinerary > onboarding
+      let age = extractedTraveler.age || 
+                (Array.isArray(tripDetails.ages) ? tripDetails.ages[idx] : undefined) ||
+                tripDetails.ages?.[idx] ||
+                extractedData.ages?.[idx] ||
+                extractedData.travelers?.[idx]?.age ||
+                (idx === 0 && onboardingData?.age) || // Use onboarding for first traveler
+                0
+      
+      // Extract email - PRIORITY: itinerary > onboarding
+      let email = extractedTraveler.email || 
+                  extractedTraveler.email_address ||
+                  extractedData.email ||
+                  tripDetails.email ||
+                  extractedData.flight_details?.contact_email ||
+                  tripDetails.flight_details?.contact_email ||
+                  extractedData.hotel_details?.contact_email ||
+                  tripDetails.hotel_details?.contact_email ||
+                  (idx === 0 && onboardingData?.email) || // Use onboarding for first traveler
+                  ''
+      
+      // Extract phone - PRIORITY: itinerary > onboarding
+      let phone = extractedTraveler.phone || 
+                  extractedTraveler.phone_number ||
+                  extractedTraveler.mobile ||
+                  extractedData.phone ||
+                  tripDetails.phone ||
+                  extractedData.flight_details?.contact_phone ||
+                  tripDetails.flight_details?.contact_phone ||
+                  extractedData.hotel_details?.contact_phone ||
+                  tripDetails.hotel_details?.contact_phone ||
+                  (idx === 0 && onboardingData?.phone) || // Use onboarding for first traveler
+                  ''
+      
+      // Extract DOB - PRIORITY: itinerary > onboarding
+      let dob = extractedTraveler.dob || 
+                extractedTraveler.dateOfBirth ||
+                extractedTraveler.date_of_birth ||
+                extractedData.travelers?.[idx]?.dob ||
+                extractedData.travelers?.[idx]?.dateOfBirth ||
+                (idx === 0 && onboardingData?.date_of_birth) || // Use onboarding for first traveler
+                ''
+      
+      // Only calculate DOB from age if DOB is missing but age exists
+      if (!dob && age && age > 0) {
+        dob = calculateDOBFromAge(age)
+      }
+      
+      console.log(`✅ Merged data for traveler ${idx + 1}:`, { name, age, email, phone, dob })
+      console.log(`   Source: itinerary=${!!extractedTraveler.name || !!extractedTraveler.email}, onboarding=${idx === 0 && !!onboardingData}`)
+      
+      autoTravelers.push({
+        name: name.trim(),
+        age: age || 0,
+        email: email.trim(),
+        phone: phone.trim(),
+        dob: dob.trim()
+      })
+    }
+    
+    console.log('📝 Final autoTravelers array:', autoTravelers)
+    
+    if (autoTravelers.length === 0) {
+      console.warn('⚠️ No travelers extracted from itinerary')
+      setIsAutoFilling(false)
+      alert('Could not extract traveler information from the itinerary. Please fill the form manually.')
+      return
+    }
+    
+    // IMPORTANT: Update ALL travelers state FIRST - this is the source of truth
+    setTravelers(autoTravelers)
+    
+    // Wait for state to update
     await delay(200)
     
-    // Auto-fill payment (test card)
-    setPaymentInfo({
-      cardName: autoTravelers[0]?.name || 'John Doe',
-      cardNumber: '4242424242424242',
-      expiryDate: '12/25',
-      cvv: '123'
-    })
+    // Set the first traveler as current and go to step 1
+    setStep(1)
+    setCurrentTraveler(autoTravelers[0])
     
-    await delay(500)
+    // Force a re-render by briefly toggling
+    await delay(300)
+    
+    // Auto-fill payment info from onboarding data if available
+    if (onboardingData?.payment_card) {
+      const cardData = onboardingData.payment_card
+      console.log('💳 Auto-filling payment from onboarding:', {
+        name: cardData.name || onboardingData.name,
+        number: cardData.number ? '****' + cardData.number.slice(-4) : 'hidden',
+        expiry: cardData.expiry,
+        cvv: '***'
+      })
+      
+      // Format card number with spaces for display (e.g., "1234 5678 9012 3456")
+      const cleanedCardNumber = cardData.number?.replace(/\s/g, '') || ''
+      const formattedCardNumber = cleanedCardNumber.replace(/(\d{4})(?=\d)/g, '$1 ') || ''
+      
+    setPaymentInfo({
+        cardName: cardData.name || onboardingData.name || autoTravelers[0]?.name || '',
+        cardNumber: formattedCardNumber,
+        expiryDate: cardData.expiry || '',
+        cvv: cardData.cvv || ''
+      })
+      
+      console.log('💳 Payment info autofilled from onboarding')
+    } else {
+      // Use first traveler's name for payment if no onboarding data
+      const primaryTravelerName = autoTravelers[0]?.name || ''
+      setPaymentInfo({
+        cardName: primaryTravelerName,
+        cardNumber: '',
+        expiryDate: '',
+        cvv: ''
+      })
+    }
+    
+    console.log('✅ Autofilled travelers array:', autoTravelers)
+    console.log('✅ Current traveler set to:', autoTravelers[0])
+    
+    // Final sync: ensure currentTraveler matches travelers[step-1] after autofill
     setIsAutoFilling(false)
+    
+    // Use setTimeout to ensure state updates are complete before final sync
+    setTimeout(() => {
+      if (autoTravelers.length > 0 && step <= autoTravelers.length) {
+        const travelerToShow = autoTravelers[step - 1] || autoTravelers[0]
+        console.log('🔄 Final sync - setting currentTraveler to:', travelerToShow)
+        setCurrentTraveler(travelerToShow)
+      }
+    }, 100)
+    
+    console.log('✅ Autofill complete - form fields should now be filled with itinerary + onboarding data')
+    
+    // Mark autofill as completed so button can be disabled
+    setHasAutoFilled(true)
   }
 
   if (!isOpen) return null
 
   const cleanedName = cleanPolicyName(quote.plan_name)
-  
-  // Calculate number of travelers from tripDetails
-  const numTravelers = (() => {
-    if (!tripDetails) return 1
-    if (Array.isArray(tripDetails.travelers)) {
-      return tripDetails.travelers.length
-    }
-    if (typeof tripDetails.travelers === 'number') {
-      return tripDetails.travelers
-    }
-    const numAdults = tripDetails.adults || 1
-    const numChildren = tripDetails.children || 0
-    return numAdults + numChildren
-  })()
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
@@ -652,16 +908,21 @@ function PurchaseForm({ quote, quoteId, tripDetails, isOpen, onClose, onComplete
         className="relative bg-gray-800 rounded-2xl shadow-2xl border border-gray-700 max-w-2xl w-full max-h-[90vh] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-4 flex items-center justify-between border-b border-gray-700">
+        <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-4 border-b border-gray-700">
+          <div className="flex items-center justify-between mb-3">
           <div>
             <h2 className="text-xl font-bold text-white">Purchase: {cleanedName}</h2>
-            <p className="text-sm text-white/80">Step {step} of {numTravelers > travelers.length ? numTravelers + 1 : numTravelers}</p>
+              <p className="text-sm text-white/80">
+                {step <= numTravelers ? `Passenger ${step} of ${numTravelers}` : 'Payment Information'}
+              </p>
           </div>
           <div className="flex items-center gap-2">
             {!isAutoFilling && (
               <button 
                 onClick={handleAutoFill}
-                className="px-3 py-1.5 bg-white/20 hover:bg-white/30 border border-white/30 rounded-lg transition-all text-white text-xs font-semibold flex items-center gap-1.5 backdrop-blur-sm"
+                disabled={hasAutoFilled}
+                className="px-3 py-1.5 bg-white/20 hover:bg-white/30 border border-white/30 rounded-lg transition-all text-white text-xs font-semibold flex items-center gap-1.5 backdrop-blur-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white/20"
+                title={hasAutoFilled ? "Autofill has already been applied" : "Fill form with itinerary data"}
               >
                 <Sparkles className="w-3 h-3" />
                 AI Auto-Fill
@@ -681,71 +942,172 @@ function PurchaseForm({ quote, quoteId, tripDetails, isOpen, onClose, onComplete
           </div>
         </div>
 
-        <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+          {/* Progress indicator with passenger dots */}
+          {step <= numTravelers && numTravelers > 1 && (
+            <div className="flex items-center justify-center gap-2">
+              {Array.from({ length: numTravelers }, (_, i) => i + 1).map((travelerNum) => (
+                <button
+                  key={travelerNum}
+                  onClick={() => goToTraveler(travelerNum)}
+                  className={`flex items-center justify-center w-8 h-8 rounded-full transition-all ${
+                    travelerNum === step
+                      ? 'bg-white text-blue-600 scale-110'
+                      : travelerNum < step
+                      ? 'bg-white/50 text-white hover:bg-white/70'
+                      : 'bg-white/20 text-white/70 hover:bg-white/30'
+                  }`}
+                  title={`Passenger ${travelerNum}${travelers[travelerNum - 1]?.name ? `: ${travelers[travelerNum - 1].name}` : ''}`}
+                >
+                  {travelerNum}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-180px)]">
           {step <= numTravelers ? (
-            <div>
-              <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                <User className="w-5 h-5 text-blue-400" />
-                Traveler {step} Information
+            <div className="space-y-6">
+              {/* Passenger Header */}
+              <div className="bg-gradient-to-r from-blue-600/20 to-purple-600/20 rounded-lg p-4 border border-blue-500/30">
+                <h3 className="text-xl font-semibold text-white mb-1 flex items-center gap-2">
+                  <User className="w-6 h-6 text-blue-400" />
+                  Passenger {step} {numTravelers > 1 ? `of ${numTravelers}` : ''}
               </h3>
+                {travelers[step - 1]?.name && (
+                  <p className="text-sm text-gray-300">{travelers[step - 1].name}</p>
+                )}
+              </div>
+
+              {/* Form Fields */}
               <div className="space-y-4">
                 <div>
-                  <label className="block text-gray-300 text-sm mb-2">Full Name *</label>
+                  <label className="block text-gray-300 text-sm font-medium mb-2">
+                    <User className="w-4 h-4 inline mr-1" />
+                    Full Name *
+                  </label>
                   <input
                     type="text"
                     value={currentTraveler.name}
                     onChange={(e) => setCurrentTraveler({ ...currentTraveler, name: e.target.value })}
-                    className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
-                    placeholder="John Doe"
+                    className="w-full bg-gray-700 text-white px-4 py-3 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                    placeholder="Enter full name"
                   />
                 </div>
+                {/* Age field for first passenger, DOB for subsequent passengers */}
+                {step === 1 ? (
+                  <div>
+                    <label className="block text-gray-300 text-sm font-medium mb-2">
+                      <Calendar className="w-4 h-4 inline mr-1" />
+                      Age *
+                    </label>
+                    <input
+                      type="number"
+                      value={currentTraveler.age || ''}
+                      onChange={(e) => setCurrentTraveler({ ...currentTraveler, age: parseInt(e.target.value) || 0 })}
+                      className="w-full bg-gray-700 text-white px-4 py-3 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                      placeholder="Enter age"
+                      min="0"
+                      max="120"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-gray-300 text-sm font-medium mb-2">
+                      <Calendar className="w-4 h-4 inline mr-1" />
+                      Date of Birth *
+                    </label>
+                    <input
+                      type="date"
+                      value={currentTraveler.dob || ''}
+                      onChange={(e) => setCurrentTraveler({ ...currentTraveler, dob: e.target.value })}
+                      max={new Date().toISOString().split('T')[0]}
+                      className="w-full bg-gray-700 text-white px-4 py-3 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                      required
+                    />
+                    {currentTraveler.dob && (
+                      <p className="text-xs text-gray-400 mt-1">
+                        Age: {(() => {
+                          const birthDate = new Date(currentTraveler.dob)
+                          const today = new Date()
+                          let age = today.getFullYear() - birthDate.getFullYear()
+                          const monthDiff = today.getMonth() - birthDate.getMonth()
+                          if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+                            age--
+                          }
+                          return age
+                        })()} years
+                      </p>
+                    )}
+                  </div>
+                )}
                 <div>
-                  <label className="block text-gray-300 text-sm mb-2">Age *</label>
-                  <input
-                    type="number"
-                    value={currentTraveler.age || ''}
-                    onChange={(e) => setCurrentTraveler({ ...currentTraveler, age: parseInt(e.target.value) || 0 })}
-                    className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
-                    placeholder="30"
-                    min="0"
-                    max="120"
-                  />
-                </div>
-                <div>
-                  <label className="block text-gray-300 text-sm mb-2">Email *</label>
+                  <label className="block text-gray-300 text-sm font-medium mb-2">
+                    <Mail className="w-4 h-4 inline mr-1" />
+                    Email *
+                  </label>
                   <input
                     type="email"
                     value={currentTraveler.email}
                     onChange={(e) => setCurrentTraveler({ ...currentTraveler, email: e.target.value })}
-                    className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
-                    placeholder="john@example.com"
+                    className="w-full bg-gray-700 text-white px-4 py-3 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                    placeholder="Enter email address"
                   />
                 </div>
                 <div>
-                  <label className="block text-gray-300 text-sm mb-2">Phone *</label>
+                  <label className="block text-gray-300 text-sm font-medium mb-2">
+                    <Phone className="w-4 h-4 inline mr-1" />
+                    Phone *
+                  </label>
                   <input
                     type="tel"
                     value={currentTraveler.phone}
                     onChange={(e) => setCurrentTraveler({ ...currentTraveler, phone: e.target.value })}
-                    className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
-                    placeholder="+65 9123 4567"
+                    className="w-full bg-gray-700 text-white px-4 py-3 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                    placeholder="Enter phone number"
                   />
                 </div>
+              </div>
+
+              {/* Navigation Buttons */}
+              <div className="flex items-center justify-between gap-4 pt-4 border-t border-gray-700">
                 <button
-                  onClick={handleAddTraveler}
-                  disabled={!currentTraveler.name || !currentTraveler.age || !currentTraveler.email || !currentTraveler.phone}
-                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition-all"
+                  onClick={handlePrevious}
+                  disabled={step === 1}
+                  className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-all"
                 >
-                  {step < numTravelers ? 'Next Traveler' : 'Continue to Payment'}
+                  <ChevronLeft className="w-5 h-5" />
+                  Previous
+                </button>
+                
+                <button
+                  onClick={handleNext}
+                  disabled={!isCurrentTravelerValid()}
+                  className="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-all"
+                >
+                  {step < numTravelers ? (
+                    <>
+                      Next Passenger
+                      <ChevronRight className="w-5 h-5" />
+                    </>
+                  ) : (
+                    <>
+                      Continue to Payment
+                      <ChevronRight className="w-5 h-5" />
+                    </>
+                  )}
                 </button>
               </div>
             </div>
           ) : (
-            <div>
-              <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                <CreditCard className="w-5 h-5 text-blue-400" />
+            <div className="space-y-6">
+              <div className="bg-gradient-to-r from-blue-600/20 to-purple-600/20 rounded-lg p-4 border border-blue-500/30">
+                <h3 className="text-xl font-semibold text-white mb-1 flex items-center gap-2">
+                  <CreditCard className="w-6 h-6 text-blue-400" />
                 Payment Information
               </h3>
+                <p className="text-sm text-gray-300">Enter your payment details to complete the purchase</p>
+              </div>
               <div className="space-y-4">
                 <div>
                   <label className="block text-gray-300 text-sm mb-2">Cardholder Name *</label>
@@ -762,10 +1124,15 @@ function PurchaseForm({ quote, quoteId, tripDetails, isOpen, onClose, onComplete
                   <input
                     type="text"
                     value={paymentInfo.cardNumber}
-                    onChange={(e) => setPaymentInfo({ ...paymentInfo, cardNumber: e.target.value.replace(/\D/g, '').slice(0, 16) })}
+                    onChange={(e) => {
+                      let value = e.target.value.replace(/\D/g, '')
+                      if (value.length > 16) value = value.substring(0, 16)
+                      const formatted = value.replace(/(\d{4})(?=\d)/g, '$1 ')
+                      setPaymentInfo({ ...paymentInfo, cardNumber: formatted })
+                    }}
                     className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
                     placeholder="1234 5678 9012 3456"
-                    maxLength={16}
+                    maxLength={19}
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -806,6 +1173,20 @@ function PurchaseForm({ quote, quoteId, tripDetails, isOpen, onClose, onComplete
                     Complete Purchase
                   </button>
                 </div>
+                
+                {/* Back to Travelers Button */}
+                <button
+                  onClick={() => {
+                    setStep(numTravelers)
+                    if (travelers[numTravelers - 1]) {
+                      setCurrentTraveler(travelers[numTravelers - 1])
+                    }
+                  }}
+                  className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-all"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                  Back to Travelers
+                </button>
               </div>
             </div>
           )}
@@ -1646,6 +2027,14 @@ export default function Home() {
         contextData.trip_details = latestTripDetails
       }
       
+      // Get user onboarding data from localStorage
+      const savedUserData = localStorage.getItem('wandersure_user_data')
+      const onboardingData = savedUserData ? JSON.parse(savedUserData) : null
+      
+      // Get purchased insurance info from localStorage
+      const savedPurchasedInsurance = localStorage.getItem('wandersure_purchased_insurance')
+      const purchasedInsurance = savedPurchasedInsurance ? JSON.parse(savedPurchasedInsurance) : null
+      
       const response = await fetch(`${API_URL}/api/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1654,10 +2043,9 @@ export default function Home() {
           language: language,
           user_id: userData?.user_id || 'default_user',
           is_voice: false,
-          context_data: {
-            ...contextData,
-            user_data: userData  // Pass user data (age, interests, medical conditions)
-          }
+          context_data: contextData,
+          user_data: onboardingData,  // User onboarding data (name, email, phone, DOB, interests, medical conditions, etc.)
+          purchased_insurance: purchasedInsurance  // Purchased insurance details (policy name, purchase date, trip details, etc.)
         })
       })
 
@@ -1890,7 +2278,20 @@ export default function Home() {
             timestamp: new Date(),
             quotes: quotes,
             quote_id: quoteData.quote_id || null,
-            trip_details: quoteData.trip_details || tripInfo
+            trip_details: {
+              ...quoteData.trip_details,
+              ...tripInfo,
+              // Ensure extracted_data is preserved with all traveler info
+              extracted_data: tripInfo,
+              // Ensure travelers array is accessible at top level
+              travelers: quoteData.trip_details?.travelers || tripInfo.travelers || [],
+              // Ensure pax count is available
+              pax: quoteData.trip_details?.pax || tripInfo.pax || tripInfo.travelers?.length || 1,
+              // Preserve all other trip info
+              destination: quoteData.trip_details?.destination || tripInfo.destination,
+              departure_date: quoteData.trip_details?.departure_date || tripInfo.departure_date,
+              return_date: quoteData.trip_details?.return_date || tripInfo.return_date
+            }
           }
           
           setMessages(prev => [...prev, successMsg])
@@ -1919,7 +2320,15 @@ export default function Home() {
             role: 'assistant',
             content: partialMsg,
             timestamp: new Date(),
-            trip_details: tripInfo
+            trip_details: {
+              ...tripInfo,
+              // Ensure travelers array is accessible
+              travelers: tripInfo.travelers || [],
+              // Ensure pax count is available
+              pax: tripInfo.pax || tripInfo.travelers?.length || 1,
+              // Preserve extracted data structure
+              extracted_data: tripInfo
+            }
           }
           setMessages(prev => [...prev, partialMsgObj])
         } else {
@@ -2576,6 +2985,20 @@ export default function Home() {
                                             purchaseDate: new Date().toISOString()
                                           })
                                           
+                                          // Store purchased insurance info for AI context
+                                          const purchasedInsuranceData = {
+                                            plan_name: selectedQuote.plan_name,
+                                            policy_number: purchaseData.policy_number || 'Processing...',
+                                            purchase_date: new Date().toISOString(),
+                                            amount: selectedQuote.price,
+                                            currency: selectedQuote.currency || 'SGD',
+                                            source: 'ancileo',
+                                            trip_details: message.trip_details || {},
+                                            insureds: insureds || []
+                                          }
+                                          localStorage.setItem('wandersure_purchased_insurance', JSON.stringify(purchasedInsuranceData))
+                                          console.log('💾 Stored purchased insurance (Ancileo):', purchasedInsuranceData)
+                                          
                                           const purchaseMsg: Message = {
                                             role: 'assistant',
                                             content: `✅ **Purchase Successful!**\n\nYour insurance policy has been purchased:\n\n• Policy: ${cleanPolicyName(selectedQuote.plan_name)}\n• Source: Ancileo\n• Policy Number: ${purchaseData.policy_number || 'Processing...'}\n• Amount: ${selectedQuote.currency || 'SGD'} ${selectedQuote.price.toFixed(2)}\n\n📄 Policy receipt downloaded to your desktop.\n\nConfirmation email will be sent shortly.`,
@@ -2615,6 +3038,20 @@ export default function Home() {
                                             tripDetails: message.trip_details,
                                             purchaseDate: new Date().toISOString()
                                           })
+                                          
+                                          // Store purchased insurance info for AI context
+                                          const purchasedInsuranceData = {
+                                            plan_name: selectedQuote.plan_name,
+                                            policy_number: paymentData.policy_number || paymentData.payment_id || 'Processing...',
+                                            purchase_date: new Date().toISOString(),
+                                            amount: selectedQuote.price,
+                                            currency: selectedQuote.currency || 'SGD',
+                                            source: selectedQuote.source || 'local',
+                                            trip_details: message.trip_details || {},
+                                            insureds: insureds || []
+                                          }
+                                          localStorage.setItem('wandersure_purchased_insurance', JSON.stringify(purchasedInsuranceData))
+                                          console.log('💾 Stored purchased insurance:', purchasedInsuranceData)
                                           
                                           const purchaseMsg: Message = {
                                             role: 'assistant',

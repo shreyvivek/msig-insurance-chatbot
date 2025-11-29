@@ -53,7 +53,7 @@ class DocumentIntelligence:
 - Flight numbers, airlines
 - Destinations (airports, cities, countries)
 - Dates (departure, return)
-- Passenger names
+- Passenger names and contact information (email, phone if visible)
 - Booking references
 - Trip costs
 
@@ -99,11 +99,16 @@ Look carefully for ANY of these details:
 - Departure and arrival airports/cities  
 - Source/departure location
 - Travel dates (departure, return) - can be in any format (e.g., "Dec 15, 2024" or "15/12/2024")
-- Passenger names and count
+- NUMBER OF PASSENGERS (pax count) - CRITICAL: count all passengers
+- ALL passenger names (extract EVERY passenger name you see)
+- Passenger ages, dates of birth (if visible)
+- Passenger contact information (email, phone if visible)
 - Booking reference numbers
 - Ticket policies or booking policies mentioned
 - Trip costs/prices
 - Destination cities or countries
+
+CRITICAL: Extract information for ALL passengers. If you see multiple passenger names, create a traveler entry for each one. The travelers array MUST have the same number of entries as the pax count. Extract one traveler object for each passenger.
 
 Return as JSON with these fields. Use null for fields you cannot see at all:
 {{
@@ -111,11 +116,14 @@ Return as JSON with these fields. Use null for fields you cannot see at all:
     "source": "city, country (departure location) or null",
     "departure_date": "YYYY-MM-DD format (convert any date format you see) or null",
     "return_date": "YYYY-MM-DD format or null",
-    "pax": <number of travelers if visible, otherwise 1>,
+    "pax": <number of travelers/passengers - COUNT ALL passengers you see>,
     "travelers": [
         {{
-            "name": "Full Name if visible, otherwise empty string",
-            "age": 0
+            "name": "Full Name if visible - extract ALL passenger names",
+            "age": <age if visible> or 0,
+            "email": "email address if visible" or "",
+            "phone": "phone number if visible" or "",
+            "dateOfBirth": "YYYY-MM-DD if visible" or ""
         }}
     ],
     "ticket_policies": ["any policy mentioned"] or [],
@@ -151,9 +159,13 @@ Look for:
 - Trip destination (city, country) - CRITICAL
 - Source/departure location (city, country)
 - Travel dates (start and end dates) - can be in various formats
-- Number of travelers (pax count)
-- Traveler ages if mentioned
+- NUMBER OF TRAVELERS (pax count) - CRITICAL: count all passengers in the document
+- ALL traveler/passenger names - extract EVERY name you see, one per passenger
+- Traveler ages, email addresses, phone numbers, dates of birth (if visible for each passenger)
 - Ticket policies/booking policies mentioned
+
+CRITICAL: Extract separate traveler entries for EACH passenger. If you see 2 names, create 2 traveler objects. If you see 3 names, create 3 traveler objects. The travelers array MUST have exactly the same number of entries as the pax count. Create one traveler object for EACH passenger. If pax=3, travelers array must have 3 entries. Extract all passenger names you see.
+
 - Trip cost/price
 - Planned activities
 - Flight details (airline, flight number, airports)
@@ -165,11 +177,14 @@ Return as JSON. Use null for fields completely absent, but try to extract partia
     "source": "city, country (e.g., Singapore, Singapore) or null",
     "departure_date": "YYYY-MM-DD (convert any date format you see) or null",
     "return_date": "YYYY-MM-DD (convert any date format you see) or null",
-    "pax": <number of travelers if mentioned, otherwise 1>,
+    "pax": <number of travelers/passengers - COUNT ALL passengers mentioned in document>,
     "travelers": [
         {{
-            "name": "Full Name if available" or "",
-            "age": <age if mentioned> or 0
+            "name": "Full Name if available - extract ALL passenger names",
+            "age": <age if mentioned> or 0,
+            "email": "email address if visible in document" or "",
+            "phone": "phone number if visible in document" or "",
+            "dateOfBirth": "YYYY-MM-DD if visible" or ""
         }}
     ],
     "ticket_policies": ["policy mentioned"] or [],
@@ -276,10 +291,26 @@ CRITICAL: Extract ANY information visible, even if incomplete. If you see destin
                 missing_fields.append("travelers")
                 validation_questions.append("How many travelers? And what are their ages?")
             
-            # Set default values if missing but we have some data
-            if not extracted.get("pax") and not extracted.get("travelers"):
-                extracted["pax"] = 1
-                extracted["travelers"] = [{"name": "", "age": 30}]
+            # Ensure travelers array is properly structured from pax count if needed
+            pax_count = extracted.get("pax", 0)
+            travelers_array = extracted.get("travelers", [])
+            
+            # If we have pax count but incomplete travelers array, expand it
+            if pax_count > 0 and len(travelers_array) < pax_count:
+                # Extend travelers array to match pax count
+                for i in range(len(travelers_array), pax_count):
+                    travelers_array.append({
+                        "name": "",
+                        "age": 0,
+                        "email": "",
+                        "phone": "",
+                        "dateOfBirth": ""
+                    })
+                extracted["travelers"] = travelers_array
+            
+            # If we have travelers but no pax count, set pax from travelers length
+            if travelers_array and pax_count == 0:
+                extracted["pax"] = len(travelers_array)
             
             # If we have at least destination OR dates, consider it partially successful
             has_partial_data = has_destination or has_departure_date or has_return_date

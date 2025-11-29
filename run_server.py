@@ -157,76 +157,8 @@ async def ask_question(request: dict):
         user_id = request.get("user_id", "default_user")
         context_data = request.get("context_data", {})
         
-        # EARLY CANCELLATION DETECTION - Check before any other processing
-        # This ensures cancellation questions get immediate hardcoded response
-        cancellation_keywords = ["cancel", "cancellation", "refund", "terminate", "end policy", "stop coverage", 
-                                 "how to cancel", "how do i cancel", "can i cancel", "how can i cancel", 
-                                 "want to cancel", "need to cancel", "cancel my", "cancel this", "cancel the",
-                                 "cancel insurance", "cancel policy"]
-        is_cancellation_early = any(keyword in question_lower for keyword in cancellation_keywords)
-        
-        if is_cancellation_early:
-            logger.info(f"Early cancellation detection: {question}")
-            # Check if MH Insurance is mentioned, or assume it (user is purchasing MH Insurance)
-            if "mhinsure" in question_lower or "mh insure" in question_lower or not any(p in question_lower for p in ["scootsurance", "international travel", "msig"]):
-                logger.info("Returning hardcoded MH Insurance cancellation response (early)")
-                mh_cancellation_response = """**How to Cancel Your MHInsure Travel Policy**
-
-To cancel your **MHInsure Travel** policy, you have the following options:
-
-**📞 Contact Methods:**
-1. **Phone**: Call MH Insurance customer service at +65 1234 5678 (Monday to Friday, 9 AM - 6 PM)
-2. **Email**: Send a cancellation request to cancellations@mhinsurance.com.sg
-3. **Online**: Log in to your account at www.mhinsurance.com.sg and submit a cancellation request through the portal
-
-**📋 Required Information:**
-- Policy number
-- Full name as per policy
-- Reason for cancellation (optional)
-- Date you wish the cancellation to take effect
-
-**💰 Refund Policy:**
-- **Full refund**: If cancelled within 14 days of purchase (cooling-off period)
-- **Partial refund**: If cancelled after 14 days, you may be eligible for a pro-rated refund based on unused coverage period, minus any administrative fees
-- **No refund**: If a claim has been made or if the trip has already commenced
-
-**⏰ Processing Time:**
-- Cancellation requests are typically processed within 5-7 business days
-- Refunds (if applicable) will be credited to your original payment method within 10-14 business days
-
-**⚠️ Important Notes:**
-- Cancellation fees may apply if cancelled after the cooling-off period
-- If you've already started your trip, cancellation may not be possible
-- Contact customer service for specific terms based on your policy details
-
-Would you like me to help you with anything else regarding your MHInsure Travel policy?"""
-                
-                return {
-                    "answer": mh_cancellation_response,
-                    "content": mh_cancellation_response,
-                    "message": mh_cancellation_response,
-                    "booking_links": [],
-                    "suggested_questions": [
-                        {
-                            "question": "What is the cooling-off period?",
-                            "icon": "❓",
-                            "priority": "high"
-                        },
-                        {
-                            "question": "How long does a refund take?",
-                            "icon": "💰",
-                            "priority": "medium"
-                        },
-                        {
-                            "question": "Can I cancel if my trip has started?",
-                            "icon": "✈️",
-                            "priority": "medium"
-                        }
-                    ],
-                    "quotes": [],
-                    "quote_id": None,
-                    "trip_details": None
-                }
+        # NO MORE HARDCODED RESPONSES - All questions go through AI model
+        # Removed early cancellation detection that bypassed AI
         
         # Check if user mentions a destination - analyze claims data proactively
         destination_mentioned = None
@@ -631,179 +563,24 @@ CRITICAL INSTRUCTION:
                                  "want to cancel", "need to cancel", "cancel my", "cancel this", "cancel the"]
         is_cancellation_question = any(keyword in question_lower_check for keyword in cancellation_keywords)
         
-        # Handle cancellation questions with policy intelligence
+        # Handle cancellation questions - let AI handle with user context
         if is_cancellation_question:
-            try:
-                logger.info(f"Detected cancellation question: {question}")
-                
-                # Extract policy name if mentioned
-                policy_name = None
-                if "scootsurance" in question_lower_check:
-                    policy_name = "Scootsurance"
-                elif "international travel" in question_lower_check or "msig" in question_lower_check:
-                    policy_name = "INTERNATIONAL TRAVEL"
-                elif "mhinsure" in question_lower_check or "mh insure" in question_lower_check:
-                    policy_name = "MHInsure Travel"
-                
-                # HARDCODED RESPONSE FOR MH INSURANCE CANCELLATION
-                # User is purchasing MH Insurance, so provide immediate hardcoded response
-                # Return hardcoded response if:
-                # 1. MH Insurance is explicitly mentioned, OR
-                # 2. No specific policy mentioned (assumes MH Insurance since user is purchasing it)
-                if policy_name == "MHInsure Travel" or (not policy_name):
-                    logger.info("Returning hardcoded MH Insurance cancellation response")
-                    mh_cancellation_response = """**How to Cancel Your MHInsure Travel Policy**
+            logger.info(f"Detected cancellation question: {question}")
+            # Add simple cancellation context - AI will use user's purchased insurance info for personalized answer
+            enhanced_context = enhanced_context + """
 
-To cancel your **MHInsure Travel** policy, you have the following options:
+📋 CANCELLATION QUESTION DETECTED:
 
-**📞 Contact Methods:**
-1. **Phone**: Call MH Insurance customer service at +65 1234 5678 (Monday to Friday, 9 AM - 6 PM)
-2. **Email**: Send a cancellation request to cancellations@mhinsurance.com.sg
-3. **Online**: Log in to your account at www.mhinsurance.com.sg and submit a cancellation request through the portal
+The user is asking about canceling their policy. Important instructions:
+1. If the user has PURCHASED INSURANCE in their profile, reference THEIR specific policy
+2. Provide cancellation steps, requirements, refund policies, and contact information for THEIR policy
+3. Use policy intelligence to fetch exact cancellation terms from policy documents if needed
+4. Be clear and helpful about the cancellation process
+5. Mention cooling-off periods, refund eligibility, and any fees
 
-**📋 Required Information:**
-- Policy number
-- Full name as per policy
-- Reason for cancellation (optional)
-- Date you wish the cancellation to take effect
-
-**💰 Refund Policy:**
-- **Full refund**: If cancelled within 14 days of purchase (cooling-off period)
-- **Partial refund**: If cancelled after 14 days, you may be eligible for a pro-rated refund based on unused coverage period, minus any administrative fees
-- **No refund**: If a claim has been made or if the trip has already commenced
-
-**⏰ Processing Time:**
-- Cancellation requests are typically processed within 5-7 business days
-- Refunds (if applicable) will be credited to your original payment method within 10-14 business days
-
-**⚠️ Important Notes:**
-- Cancellation fees may apply if cancelled after the cooling-off period
-- If you've already started your trip, cancellation may not be possible
-- Contact customer service for specific terms based on your policy details
-
-Would you like me to help you with anything else regarding your MHInsure Travel policy?"""
-                    
-                    return {
-                        "answer": mh_cancellation_response,
-                        "content": mh_cancellation_response,
-                        "message": mh_cancellation_response,
-                        "booking_links": [],
-                        "suggested_questions": [
-                            {
-                                "question": "What is the cooling-off period?",
-                                "icon": "❓",
-                                "priority": "high"
-                            },
-                            {
-                                "question": "How long does a refund take?",
-                                "icon": "💰",
-                                "priority": "medium"
-                            },
-                            {
-                                "question": "Can I cancel if my trip has started?",
-                                "icon": "✈️",
-                                "priority": "medium"
-                            }
-                        ],
-                        "quotes": [],
-                        "quote_id": None,
-                        "trip_details": None
-                    }
-                
-                # Get cancellation info for all policies if none specified, or specific policy
-                cancellation_info = ""
-                if policy_name:
-                    # Single policy
-                    try:
-                        cancellation_info = await policy_intel.explain_coverage(
-                            topic="cancellation, refund, and policy termination",
-                            policy=policy_name,
-                            scenario="User wants to cancel their policy"
-                        )
-                    except Exception as e:
-                        logger.warning(f"Failed to get cancellation info for {policy_name}: {e}")
-                        cancellation_info = f"**{policy_name}**: Please refer to the policy document for cancellation terms."
-                else:
-                    # All policies - get info for each
-                    policy_list = ["Scootsurance", "MHInsure Travel", "INTERNATIONAL TRAVEL"]
-                    cancellation_details = []
-                    for pol in policy_list:
-                        try:
-                            info = await policy_intel.explain_coverage(
-                                topic="cancellation, refund, and policy termination",
-                                policy=pol,
-                                scenario="User wants to cancel their policy"
-                            )
-                            cancellation_details.append(f"**{pol}**\n\n{info}")
-                        except Exception as e:
-                            logger.warning(f"Failed to get cancellation info for {pol}: {e}")
-                            cancellation_details.append(f"**{pol}**: Please refer to the policy document for cancellation terms.")
-                    
-                    # Format each policy on a new line
-                    cancellation_info = "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n".join(cancellation_details)
-                
-                # Add claims data if available for the destination
-                claims_context_for_cancellation = ""
-                if destination_mentioned and claims_analysis and claims_analysis.get("has_data"):
-                    top_rec = claims_analysis.get("recommendations", [{}])[0] if claims_analysis.get("recommendations") else {}
-                    claims_context_for_cancellation = f"""
-
-🎯 CLAIMS DATA FOR {destination_mentioned.upper()}:
-- {top_rec.get('incidence_rate', 'N/A')} of travelers have claimed for {top_rec.get('claim_type', 'incidents')}
-- Average cost per claim: ${top_rec.get('average_cost', 0):,.2f} SGD
-- This data may be relevant when considering policy cancellation and refund options.
+The AI will use the user's purchased insurance information (if available) to provide a personalized answer.
 
 """
-                
-                # Build enhanced context with cancellation info
-                cancellation_context = f"""
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📋 POLICY CANCELLATION INFORMATION:
-{claims_context_for_cancellation}
-{cancellation_info}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-CRITICAL INSTRUCTIONS:
-1. Use the EXACT cancellation terms from the policy information above
-2. Format each policy on a NEW LINE with clear separation
-3. Explain the cancellation process step-by-step for EACH policy mentioned
-4. Mention any cancellation fees or refund policies
-5. Provide specific timeframes if mentioned in the policy
-6. Include contact information or how to initiate cancellation
-7. If claims data is present, mention it in context
-8. Be clear and helpful - this is an important question
-9. Format policies like this:
-   - **Scootsurance**: [cancellation info]
-   
-   - **MHInsure Travel**: [cancellation info]
-   
-   - **INTERNATIONAL TRAVEL**: [cancellation info]
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
-                
-                enhanced_context = enhanced_context + cancellation_context
-                logger.info(f"Added cancellation context for policy: {policy_name or 'all policies'}")
-                
-            except Exception as e:
-                logger.error(f"Cancellation handling failed: {e}", exc_info=True)
-                # Add fallback cancellation context even if extraction fails
-                enhanced_context = enhanced_context + f"""
-
-📋 CANCELLATION INFORMATION:
-
-To cancel your travel insurance policy, please:
-1. Contact the insurance provider directly
-2. Check your policy document for specific cancellation terms
-3. Review refund policies and any applicable fees
-4. Submit cancellation request in writing if required
-
-For specific cancellation terms, please refer to your policy document or contact customer service.
-
-"""
-                logger.info("Added fallback cancellation context")
         
         needs_policy_details = any(word in question_lower_check for word in ["premium", "price", "cost", "fee"])
         
@@ -858,11 +635,57 @@ For specific cancellation terms, please refer to your policy document or contact
             except Exception as e:
                 logger.error(f"Failed to add policy details context: {e}")
         
-        # Normal conversation flow (with enhanced context if claims data available)
+        # Extract user data from request (onboarding details, purchased insurance)
+        user_data = request.get("user_data", {})  # From frontend localStorage
+        purchased_insurance = request.get("purchased_insurance", {})  # Insurance purchased by user
+        
+        # Build user context for AI personalization
+        user_context = ""
+        if user_data:
+            user_context += "\n\n👤 USER PROFILE & ONBOARDING DATA:\n"
+            if user_data.get("name"):
+                user_context += f"- Name: {user_data.get('name')}\n"
+            if user_data.get("email"):
+                user_context += f"- Email: {user_data.get('email')}\n"
+            if user_data.get("phone"):
+                user_context += f"- Phone: {user_data.get('phone')}\n"
+            if user_data.get("date_of_birth") or user_data.get("age"):
+                dob_or_age = user_data.get('date_of_birth') or f"Age {user_data.get('age')}"
+                user_context += f"- Age/DOB: {dob_or_age}\n"
+            if user_data.get("interests"):
+                user_context += f"- Travel Interests: {', '.join(user_data.get('interests', []))}\n"
+            if user_data.get("medical_conditions"):
+                user_context += f"- Medical Conditions: {', '.join(user_data.get('medical_conditions', []))}\n"
+            if user_data.get("passport_number"):
+                user_context += f"- Passport: {user_data.get('passport_number')}\n"
+            if user_data.get("nric_number"):
+                user_context += f"- NRIC: {user_data.get('nric_number')}\n"
+        
+        if purchased_insurance:
+            user_context += "\n\n🛡️ PURCHASED INSURANCE:\n"
+            if purchased_insurance.get("plan_name"):
+                user_context += f"- Policy: **{purchased_insurance.get('plan_name')}**\n"
+            if purchased_insurance.get("policy_number"):
+                user_context += f"- Policy Number: {purchased_insurance.get('policy_number')}\n"
+            if purchased_insurance.get("purchase_date"):
+                user_context += f"- Purchase Date: {purchased_insurance.get('purchase_date')}\n"
+            if purchased_insurance.get("trip_details"):
+                trip = purchased_insurance.get("trip_details", {})
+                if trip.get("destination"):
+                    user_context += f"- Trip Destination: {trip.get('destination')}\n"
+                if trip.get("departure_date"):
+                    user_context += f"- Departure: {trip.get('departure_date')}\n"
+        
+        # Combine all context
+        final_context = enhanced_context if enhanced_context else request.get("context", "")
+        if user_context:
+            final_context = final_context + user_context
+        
+        # Normal conversation flow (with enhanced context including user data)
         result = await conversation.handle_question(
             question=request.get("question"),
             language=request.get("language"),
-            context=enhanced_context if enhanced_context else request.get("context"),
+            context=final_context,
             user_id=user_id,
             is_voice=request.get("is_voice", False),
             role=request.get("role")
