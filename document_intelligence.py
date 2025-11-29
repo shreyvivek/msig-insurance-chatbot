@@ -38,10 +38,26 @@ class DocumentIntelligence:
                 if "pdf" in header.lower():
                     document_type = "pdf"
                     import tempfile
-                    with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
-                        tmp.write(file_bytes)
-                        text = self._extract_pdf_text(Path(tmp.name))
-                        Path(tmp.name).unlink()
+                    # Windows-compatible tempfile handling
+                    tmp_path = None
+                    try:
+                        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
+                            tmp.write(file_bytes)
+                            tmp_path = Path(tmp.name)
+                        text = self._extract_pdf_text(tmp_path)
+                    finally:
+                        # Ensure cleanup on Windows (files may be locked if not closed)
+                        if tmp_path and tmp_path.exists():
+                            try:
+                                tmp_path.unlink()
+                            except (OSError, PermissionError):
+                                # On Windows, file might still be locked - try again after a delay
+                                import time
+                                time.sleep(0.1)
+                                try:
+                                    tmp_path.unlink()
+                                except:
+                                    logger.warning(f"Could not delete temp file: {tmp_path}")
                 elif "image" in header.lower():
                     document_type = "image"
                     # For images, use OCR via Groq Vision or description
@@ -75,10 +91,25 @@ Return as structured text that can be parsed for travel insurance."""
                     try:
                         pdf_bytes = base64.b64decode(document_data)
                         import tempfile
-                        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
-                            tmp.write(pdf_bytes)
-                            text = self._extract_pdf_text(Path(tmp.name))
-                            Path(tmp.name).unlink()
+                        # Windows-compatible tempfile handling
+                        tmp_path = None
+                        try:
+                            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
+                                tmp.write(pdf_bytes)
+                                tmp_path = Path(tmp.name)
+                            text = self._extract_pdf_text(tmp_path)
+                        finally:
+                            # Ensure cleanup on Windows
+                            if tmp_path and tmp_path.exists():
+                                try:
+                                    tmp_path.unlink()
+                                except (OSError, PermissionError):
+                                    import time
+                                    time.sleep(0.1)
+                                    try:
+                                        tmp_path.unlink()
+                                    except:
+                                        logger.warning(f"Could not delete temp file: {tmp_path}")
                     except:
                         text = document_data
             else:
@@ -114,10 +145,11 @@ Return as JSON with these fields. Use null for fields you cannot see at all:
     "pax": <number of travelers if visible, otherwise 1>,
     "travelers": [
         {{
-            "name": "Full Name if visible, otherwise empty string",
-            "age": 0
+            "name": "Full Name if visible (FIRST NAME LAST NAME format), otherwise empty string",
+            "age": <age if mentioned> or 0
         }}
     ],
+    "traveler_names": ["List of all traveler names if visible, e.g., ['John Doe', 'Jane Doe']"] or [],
     "ticket_policies": ["any policy mentioned"] or [],
     "flight_details": {{
         "airline": "airline name if visible" or "",
@@ -168,10 +200,11 @@ Return as JSON. Use null for fields completely absent, but try to extract partia
     "pax": <number of travelers if mentioned, otherwise 1>,
     "travelers": [
         {{
-            "name": "Full Name if available" or "",
+            "name": "Full Name if available (FIRST NAME LAST NAME format)" or "",
             "age": <age if mentioned> or 0
         }}
     ],
+    "traveler_names": ["List of all traveler names if visible, e.g., ['John Doe', 'Jane Doe']"] or [],
     "ticket_policies": ["policy mentioned"] or [],
     "flight_details": {{
         "airline": "" or null,
@@ -281,6 +314,48 @@ CRITICAL: Extract ANY information visible, even if incomplete. If you see destin
                 extracted["pax"] = 1
                 extracted["travelers"] = [{"name": "", "age": 30}]
             
+            # Helper function to clean names (remove repeated characters like "MMMMssss")
+            def clean_name(name: str) -> str:
+                if not name:
+                    return ""
+                # Remove repeated character patterns (e.g., "MMMMssss" -> "Ms")
+                import re
+                # Pattern to find 3+ repeated characters
+                cleaned = re.sub(r'(.)\1{2,}', r'\1', name)
+                # Clean up extra spaces
+                cleaned = ' '.join(cleaned.split())
+                return cleaned.strip()
+            
+            # Clean all traveler names before storing
+            if extracted.get("travelers"):
+                for traveler in extracted.get("travelers", []):
+                    if traveler.get("name"):
+                        traveler["name"] = clean_name(traveler["name"])
+            
+            if extracted.get("traveler_names"):
+                extracted["traveler_names"] = [clean_name(name) for name in extracted.get("traveler_names", [])]
+            
+            # Ensure traveler_names list is populated from travelers array
+            # This helps maintain consistency between travelers array and traveler_names list
+            if extracted.get("travelers") and not extracted.get("traveler_names"):
+                traveler_names = [t.get("name", "").strip() for t in extracted.get("travelers", []) if t.get("name", "").strip()]
+                extracted["traveler_names"] = traveler_names if traveler_names else []
+            
+            # If we have traveler_names but not in travelers array, populate it
+            # This handles cases where names are extracted but not in the structured format
+            if extracted.get("traveler_names") and not any(t.get("name", "").strip() for t in extracted.get("travelers", [])):
+                names = extracted.get("traveler_names", [])
+                pax_count = extracted.get("pax", len(names))
+                extracted["travelers"] = [
+                    {"name": name, "age": 0} 
+                    for name in names[:pax_count]
+                ]
+            
+            # Log extracted traveler information for debugging and verification
+            if extracted.get("travelers"):
+                traveler_names_list = [t.get("name", "Unknown") for t in extracted.get("travelers", [])]
+                logger.info(f"Extracted {len(extracted.get('travelers', []))} travelers: {traveler_names_list}")
+            
             # If we have at least destination OR dates, consider it partially successful
             has_partial_data = has_destination or has_departure_date or has_return_date
             
@@ -382,24 +457,76 @@ CRITICAL: Extract ANY information visible, even if incomplete. If you see destin
             }
     
     def _extract_pdf_text(self, pdf_path: Path) -> str:
-        """Extract text from PDF"""
+        """
+        Extract text from PDF with support for large files.
+        
+        Processes PDFs in chunks to handle large files without memory issues.
+        Uses pdfplumber first (better for tables), falls back to PyPDF2 if needed.
+        Limits text extraction per page and total to prevent memory overflow.
+        
+        Args:
+            pdf_path: Path to the PDF file to extract text from
+            
+        Returns:
+            Extracted text content from the PDF, truncated if too large
+        """
         text_content = []
+        max_text_length = 100000  # Limit text extraction to prevent memory issues
         
         try:
-            # Try pdfplumber first
+            # Try pdfplumber first (better for tables and complex layouts)
             with pdfplumber.open(pdf_path) as pdf:
-                for page in pdf.pages:
-                    text = page.extract_text()
-                    if text:
-                        text_content.append(text)
-        except:
+                total_pages = len(pdf.pages)
+                logger.info(f"Processing PDF with {total_pages} pages")
+                
+                # Process pages in chunks for large files
+                for i, page in enumerate(pdf.pages):
+                    try:
+                        text = page.extract_text()
+                        if text:
+                            # Limit text per page to prevent memory issues
+                            if len(text) > 50000:  # Very long page
+                                text = text[:50000] + "... [truncated for large page]"
+                            text_content.append(text)
+                            
+                            # Check total length and stop if too large
+                            total_length = sum(len(t) for t in text_content)
+                            if total_length > max_text_length:
+                                logger.warning(f"PDF text truncated at {total_length} characters to prevent memory issues")
+                                text_content.append(f"\n\n[Note: PDF truncated after page {i+1} of {total_pages} due to size]")
+                                break
+                    except Exception as page_error:
+                        logger.warning(f"Error extracting page {i+1}: {page_error}")
+                        continue
+                        
+        except Exception as e:
+            logger.warning(f"pdfplumber failed: {e}, trying PyPDF2 fallback")
             # Fallback to PyPDF2
-            with open(pdf_path, 'rb') as f:
-                pdf_reader = PyPDF2.PdfReader(f)
-                for page in pdf_reader.pages:
-                    text = page.extract_text()
-                    if text:
-                        text_content.append(text)
+            try:
+                with open(pdf_path, 'rb') as f:
+                    pdf_reader = PyPDF2.PdfReader(f)
+                    total_pages = len(pdf_reader.pages)
+                    logger.info(f"Processing PDF with PyPDF2: {total_pages} pages")
+                    
+                    for i, page in enumerate(pdf_reader.pages):
+                        try:
+                            text = page.extract_text()
+                            if text:
+                                if len(text) > 50000:
+                                    text = text[:50000] + "... [truncated for large page]"
+                                text_content.append(text)
+                                
+                                total_length = sum(len(t) for t in text_content)
+                                if total_length > max_text_length:
+                                    logger.warning(f"PDF text truncated at {total_length} characters")
+                                    text_content.append(f"\n\n[Note: PDF truncated after page {i+1} of {total_pages}]")
+                                    break
+                        except Exception as page_error:
+                            logger.warning(f"Error extracting page {i+1} with PyPDF2: {page_error}")
+                            continue
+            except Exception as fallback_error:
+                logger.error(f"Both PDF extraction methods failed: {fallback_error}")
+                return "[Error: Could not extract text from PDF]"
         
         return "\n\n".join(text_content)
     

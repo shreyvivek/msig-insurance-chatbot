@@ -157,76 +157,9 @@ async def ask_question(request: dict):
         user_id = request.get("user_id", "default_user")
         context_data = request.get("context_data", {})
         
-        # EARLY CANCELLATION DETECTION - Check before any other processing
-        # This ensures cancellation questions get immediate hardcoded response
-        cancellation_keywords = ["cancel", "cancellation", "refund", "terminate", "end policy", "stop coverage", 
-                                 "how to cancel", "how do i cancel", "can i cancel", "how can i cancel", 
-                                 "want to cancel", "need to cancel", "cancel my", "cancel this", "cancel the",
-                                 "cancel insurance", "cancel policy"]
-        is_cancellation_early = any(keyword in question_lower for keyword in cancellation_keywords)
-        
-        if is_cancellation_early:
-            logger.info(f"Early cancellation detection: {question}")
-            # Check if MH Insurance is mentioned, or assume it (user is purchasing MH Insurance)
-            if "mhinsure" in question_lower or "mh insure" in question_lower or not any(p in question_lower for p in ["scootsurance", "international travel", "msig"]):
-                logger.info("Returning hardcoded MH Insurance cancellation response (early)")
-                mh_cancellation_response = """**How to Cancel Your MHInsure Travel Policy**
-
-To cancel your **MHInsure Travel** policy, you have the following options:
-
-**📞 Contact Methods:**
-1. **Phone**: Call MH Insurance customer service at +65 1234 5678 (Monday to Friday, 9 AM - 6 PM)
-2. **Email**: Send a cancellation request to cancellations@mhinsurance.com.sg
-3. **Online**: Log in to your account at www.mhinsurance.com.sg and submit a cancellation request through the portal
-
-**📋 Required Information:**
-- Policy number
-- Full name as per policy
-- Reason for cancellation (optional)
-- Date you wish the cancellation to take effect
-
-**💰 Refund Policy:**
-- **Full refund**: If cancelled within 14 days of purchase (cooling-off period)
-- **Partial refund**: If cancelled after 14 days, you may be eligible for a pro-rated refund based on unused coverage period, minus any administrative fees
-- **No refund**: If a claim has been made or if the trip has already commenced
-
-**⏰ Processing Time:**
-- Cancellation requests are typically processed within 5-7 business days
-- Refunds (if applicable) will be credited to your original payment method within 10-14 business days
-
-**⚠️ Important Notes:**
-- Cancellation fees may apply if cancelled after the cooling-off period
-- If you've already started your trip, cancellation may not be possible
-- Contact customer service for specific terms based on your policy details
-
-Would you like me to help you with anything else regarding your MHInsure Travel policy?"""
-                
-                return {
-                    "answer": mh_cancellation_response,
-                    "content": mh_cancellation_response,
-                    "message": mh_cancellation_response,
-                    "booking_links": [],
-                    "suggested_questions": [
-                        {
-                            "question": "What is the cooling-off period?",
-                            "icon": "❓",
-                            "priority": "high"
-                        },
-                        {
-                            "question": "How long does a refund take?",
-                            "icon": "💰",
-                            "priority": "medium"
-                        },
-                        {
-                            "question": "Can I cancel if my trip has started?",
-                            "icon": "✈️",
-                            "priority": "medium"
-                        }
-                    ],
-                    "quotes": [],
-                    "quote_id": None,
-                    "trip_details": None
-                }
+        # CANCELLATION DETECTION - Will be handled later with policy intelligence search
+        # No early hardcoded response - the chatbot will search through actual policy documents
+        # to provide accurate, up-to-date cancellation information based on policy wordings
         
         # Check if user mentions a destination - analyze claims data proactively
         destination_mentioned = None
@@ -645,72 +578,10 @@ CRITICAL INSTRUCTION:
                 elif "mhinsure" in question_lower_check or "mh insure" in question_lower_check:
                     policy_name = "MHInsure Travel"
                 
-                # HARDCODED RESPONSE FOR MH INSURANCE CANCELLATION
-                # User is purchasing MH Insurance, so provide immediate hardcoded response
-                # Return hardcoded response if:
-                # 1. MH Insurance is explicitly mentioned, OR
-                # 2. No specific policy mentioned (assumes MH Insurance since user is purchasing it)
-                if policy_name == "MHInsure Travel" or (not policy_name):
-                    logger.info("Returning hardcoded MH Insurance cancellation response")
-                    mh_cancellation_response = """**How to Cancel Your MHInsure Travel Policy**
-
-To cancel your **MHInsure Travel** policy, you have the following options:
-
-**📞 Contact Methods:**
-1. **Phone**: Call MH Insurance customer service at +65 1234 5678 (Monday to Friday, 9 AM - 6 PM)
-2. **Email**: Send a cancellation request to cancellations@mhinsurance.com.sg
-3. **Online**: Log in to your account at www.mhinsurance.com.sg and submit a cancellation request through the portal
-
-**📋 Required Information:**
-- Policy number
-- Full name as per policy
-- Reason for cancellation (optional)
-- Date you wish the cancellation to take effect
-
-**💰 Refund Policy:**
-- **Full refund**: If cancelled within 14 days of purchase (cooling-off period)
-- **Partial refund**: If cancelled after 14 days, you may be eligible for a pro-rated refund based on unused coverage period, minus any administrative fees
-- **No refund**: If a claim has been made or if the trip has already commenced
-
-**⏰ Processing Time:**
-- Cancellation requests are typically processed within 5-7 business days
-- Refunds (if applicable) will be credited to your original payment method within 10-14 business days
-
-**⚠️ Important Notes:**
-- Cancellation fees may apply if cancelled after the cooling-off period
-- If you've already started your trip, cancellation may not be possible
-- Contact customer service for specific terms based on your policy details
-
-Would you like me to help you with anything else regarding your MHInsure Travel policy?"""
-                    
-                    return {
-                        "answer": mh_cancellation_response,
-                        "content": mh_cancellation_response,
-                        "message": mh_cancellation_response,
-                        "booking_links": [],
-                        "suggested_questions": [
-                            {
-                                "question": "What is the cooling-off period?",
-                                "icon": "❓",
-                                "priority": "high"
-                            },
-                            {
-                                "question": "How long does a refund take?",
-                                "icon": "💰",
-                                "priority": "medium"
-                            },
-                            {
-                                "question": "Can I cancel if my trip has started?",
-                                "icon": "✈️",
-                                "priority": "medium"
-                            }
-                        ],
-                        "quotes": [],
-                        "quote_id": None,
-                        "trip_details": None
-                    }
-                
-                # Get cancellation info for all policies if none specified, or specific policy
+                # Get cancellation info by searching through policy documents using policy intelligence
+                # This ensures accurate information from actual policy documents rather than hardcoded responses.
+                # The policy intelligence system will extract relevant cancellation, refund, and termination
+                # information directly from the policy PDFs for the specified policy or all policies.
                 cancellation_info = ""
                 if policy_name:
                     # Single policy
@@ -891,11 +762,34 @@ For specific cancellation terms, please refer to your policy document or contact
         return result
     
     except Exception as e:
-        logger.error(f"Error in /api/ask endpoint: {e}", exc_info=True)
         import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
+        error_trace = traceback.format_exc()
+        logger.error(f"Error in /api/ask endpoint: {e}", exc_info=True)
+        logger.error(f"Full traceback:\n{error_trace}")
         
-        # Provide helpful error response
+        # Log the question that caused the error for debugging
+        logger.error(f"Question that caused error: {request.get('question', 'N/A')}")
+        logger.error(f"Request data: {request}")
+        
+        # Try to provide a fallback response using conversation handler with minimal context
+        try:
+            logger.info("Attempting fallback response from conversation handler...")
+            fallback_result = await conversation.handle_question(
+                question=request.get("question", "Help"),
+                language=request.get("language"),
+                context="User encountered an error. Provide a simple, helpful response.",
+                user_id=request.get("user_id", "default_user"),
+                is_voice=request.get("is_voice", False),
+                role=request.get("role")
+            )
+            
+            if fallback_result and fallback_result.get("answer"):
+                logger.info("Fallback response successful")
+                return fallback_result
+        except Exception as fallback_error:
+            logger.error(f"Fallback also failed: {fallback_error}")
+        
+        # Last resort error message
         error_message = f"😅 **I'm having a bit of trouble right now**\n\nI encountered an issue, but I'm here to help! Here's what you can try:\n\n• **Try rephrasing** your question - sometimes simpler wording works better\n• **Wait a moment** and try again - this might be temporary\n• **Ask something simple** like \"What can you help me with?\" or \"Tell me about travel insurance\"\n\nI apologize for the inconvenience. Your question is important to me!"
         
         return {

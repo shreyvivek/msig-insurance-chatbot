@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useRef, useEffect } from 'react'
-import { Send, Mic, Volume2, Sparkles, Plane, Upload, X, History, ChevronLeft, ExternalLink, ShoppingCart, User, CreditCard, Mail, Phone, Calendar, MessageSquarePlus, Trash2 } from 'lucide-react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
+import { Send, Mic, Volume2, Sparkles, Plane, Upload, X, History, ChevronLeft, ExternalLink, ShoppingCart, User, CreditCard, Mail, Phone, Calendar, MessageSquarePlus, Trash2, Edit2, Check, X as XIcon } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import UserOnboarding from '../components/UserOnboarding'
 
@@ -451,36 +451,53 @@ function PurchaseForm({ quote, quoteId, tripDetails, isOpen, onClose, onComplete
       // Handle different tripDetails structures
       let initialTravelers: Array<{ name: string; age: number; email: string; phone: string; dob: string }> = []
       
+      // Determine number of travelers - check multiple sources
+      let numTravelers = 1
       if (Array.isArray(tripDetails.travelers)) {
-        // If travelers is an array, map it
+        numTravelers = tripDetails.travelers.length
+      } else if (tripDetails.traveler_names && Array.isArray(tripDetails.traveler_names)) {
+        numTravelers = tripDetails.traveler_names.length
+      } else if (tripDetails.travelers && typeof tripDetails.travelers === 'number') {
+        numTravelers = tripDetails.travelers
+      } else if (tripDetails.pax && typeof tripDetails.pax === 'number') {
+        numTravelers = tripDetails.pax
+      } else {
+        const numAdults = tripDetails.adults || 1
+        const numChildren = tripDetails.children || 0
+        numTravelers = numAdults + numChildren
+      }
+      
+      // Now create travelers array with extracted data
+      if (Array.isArray(tripDetails.travelers)) {
+        // If travelers is an array with data, map it
         initialTravelers = tripDetails.travelers.map((t: any) => ({
           name: t.name || '',
           age: t.age || 0,
           email: t.email || '',
           phone: t.phone || '',
-          dob: t.dob || t.dateOfBirth || ''
+          dob: '' // NEVER auto-fill DOB
         }))
-      } else if (tripDetails.travelers && typeof tripDetails.travelers === 'number') {
-        // If travelers is a number, create empty slots
-        const numTravelers = tripDetails.travelers
+        // Ensure we have the right number
+        while (initialTravelers.length < numTravelers) {
+          initialTravelers.push({ name: '', age: 0, email: '', phone: '', dob: '' })
+        }
+      } else if (tripDetails.traveler_names && Array.isArray(tripDetails.traveler_names)) {
+        // If we have traveler names, use them
+        initialTravelers = tripDetails.traveler_names.map((name: string, idx: number) => ({
+          name: name || '',
+          age: tripDetails.ages?.[idx] || tripDetails.travelers?.[idx]?.age || 0,
+          email: '',
+          phone: '',
+          dob: '' // NEVER auto-fill DOB
+        }))
+      } else {
+        // Create empty slots with correct count
         initialTravelers = Array(numTravelers).fill(null).map(() => ({
           name: '',
           age: 0,
           email: '',
           phone: '',
-          dob: ''
-        }))
-      } else {
-        // Try to get count from adults + children
-        const numAdults = tripDetails.adults || 1
-        const numChildren = tripDetails.children || 0
-        const totalTravelers = numAdults + numChildren
-        initialTravelers = Array(totalTravelers).fill(null).map((_, index) => ({
-          name: '',
-          age: index < numAdults ? 25 : 10, // Default age
-          email: '',
-          phone: '',
-          dob: ''
+          dob: '' // NEVER auto-fill DOB
         }))
       }
       
@@ -515,14 +532,20 @@ function PurchaseForm({ quote, quoteId, tripDetails, isOpen, onClose, onComplete
       }
       setTravelers(updated)
       
-      // Calculate numTravelers for this check
+      // Calculate numTravelers for this check - check all possible sources
       const totalTravelers = (() => {
         if (!tripDetails) return Math.max(travelers.length, 1)
         if (Array.isArray(tripDetails.travelers)) {
           return tripDetails.travelers.length
         }
+        if (tripDetails.traveler_names && Array.isArray(tripDetails.traveler_names)) {
+          return tripDetails.traveler_names.length
+        }
         if (typeof tripDetails.travelers === 'number') {
           return tripDetails.travelers
+        }
+        if (tripDetails.pax && typeof tripDetails.pax === 'number') {
+          return tripDetails.pax
         }
         const numAdults = tripDetails.adults || 1
         const numChildren = tripDetails.children || 0
@@ -578,68 +601,87 @@ function PurchaseForm({ quote, quoteId, tripDetails, isOpen, onClose, onComplete
     // Simulate AI auto-fill with animation
     const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
     
-    // Auto-fill travelers with smart defaults
-    const autoTravelers = travelers.map((t, idx) => {
-      // Use extracted data if available, otherwise smart defaults
-      const extractedName = tripDetails?.travelers?.[idx]?.name
-      const extractedAge = tripDetails?.travelers?.[idx]?.age || tripDetails?.ages?.[idx]
-      
-      return {
-        name: extractedName || `Traveler ${idx + 1}`,
-        age: extractedAge || (idx === 0 ? 35 : 32),
-        email: extractedName ? `${extractedName.toLowerCase().replace(/\s+/g, '.')}@example.com` : `traveler${idx + 1}@example.com`,
-        phone: `+65 9123 ${4567 + idx}`,
-        dob: ''
+    // Get user data from localStorage if available
+    let userData = null
+    try {
+      const stored = localStorage.getItem('wandersure_user_data')
+      if (stored) {
+        userData = JSON.parse(stored)
       }
-    })
-    
-    // Animate filling each traveler
-    for (let i = 0; i < autoTravelers.length; i++) {
-      setStep(i + 1)
-      await delay(300)
-      setCurrentTraveler(autoTravelers[i])
-      await delay(500)
-      
-      // Auto-proceed to next
-      if (i < autoTravelers.length - 1) {
-        const updated = [...travelers]
-        updated[i] = autoTravelers[i]
-        setTravelers(updated)
-      }
+    } catch (e) {
+      console.warn('Could not parse user data:', e)
     }
     
-    // Fill all travelers
-    setTravelers(autoTravelers)
-    await delay(300)
-    
-    // Move to payment
-    setStep(autoTravelers.length + 1)
-    await delay(200)
-    
-    // Auto-fill payment (test card)
-    setPaymentInfo({
-      cardName: autoTravelers[0]?.name || 'John Doe',
-      cardNumber: '4242424242424242',
-      expiryDate: '12/25',
-      cvv: '123'
+    // Auto-fill travelers with ONLY extracted/real data - no dummy data
+    const autoTravelers = travelers.map((t, idx) => {
+      // Use extracted data from tripDetails if available
+      const extractedName = tripDetails?.travelers?.[idx]?.name || 
+                            tripDetails?.traveler_names?.[idx] || 
+                            ''
+      const extractedAge = tripDetails?.travelers?.[idx]?.age || 
+                          tripDetails?.ages?.[idx] || 
+                          0
+      
+      // Use real data from user profile or extracted data only
+      const travelerData = userData?.travelers?.[idx] || (idx === 0 ? userData : null)
+      const realName = extractedName || travelerData?.name || ''
+      const realAge = extractedAge || travelerData?.age || 0
+      const realEmail = travelerData?.email || ''
+      const realPhone = travelerData?.phone || ''
+      
+      return {
+        name: realName, // Only use real names, leave empty if not available
+        age: realAge || 0, // Only use real ages, leave 0 if not available
+        email: realEmail, // Only use real emails, leave empty if not available
+        phone: realPhone, // Only use real phones, leave empty if not available
+        dob: '' // NEVER auto-fill DOB/birthday
+      }
     })
     
-    await delay(500)
+    // Fill all travelers at once (don't animate through steps)
+    setTravelers(autoTravelers)
+    
+    // Update current traveler to first one if on first step
+    if (step === 1) {
+      setCurrentTraveler(autoTravelers[0] || { name: '', age: 0, email: '', phone: '', dob: '' })
+    }
+    
+    // Fill payment info with ONLY real data - no dummy/test card data
+    const realCardName = autoTravelers[0]?.name || userData?.name || userData?.travelers?.[0]?.name || ''
+    // DO NOT fill card number, expiry, or CVV - these should always be entered by user
+    // Only fill card name if we have real data
+    setPaymentInfo({
+      cardName: realCardName, // Only real name, leave empty if not available
+      cardNumber: '', // NEVER auto-fill card number
+      expiryDate: '', // NEVER auto-fill expiry
+      cvv: '' // NEVER auto-fill CVV
+    })
+    
+    await delay(300)
     setIsAutoFilling(false)
+    
+    // DO NOT automatically jump to payment page - let user fill in the blanks first
+    // User can manually proceed through the steps after reviewing autofilled data
   }
 
   if (!isOpen) return null
 
   const cleanedName = cleanPolicyName(quote.plan_name)
   
-  // Calculate number of travelers from tripDetails
+  // Calculate number of travelers from tripDetails - check all possible sources
   const numTravelers = (() => {
     if (!tripDetails) return 1
     if (Array.isArray(tripDetails.travelers)) {
       return tripDetails.travelers.length
     }
+    if (tripDetails.traveler_names && Array.isArray(tripDetails.traveler_names)) {
+      return tripDetails.traveler_names.length
+    }
     if (typeof tripDetails.travelers === 'number') {
       return tripDetails.travelers
+    }
+    if (tripDetails.pax && typeof tripDetails.pax === 'number') {
+      return tripDetails.pax
     }
     const numAdults = tripDetails.adults || 1
     const numChildren = tripDetails.children || 0
@@ -731,9 +773,19 @@ function PurchaseForm({ quote, quoteId, tripDetails, isOpen, onClose, onComplete
                     placeholder="+65 9123 4567"
                   />
                 </div>
+                <div>
+                  <label className="block text-gray-300 text-sm mb-2">Date of Birth *</label>
+                  <input
+                    type="date"
+                    value={currentTraveler.dob || ''}
+                    onChange={(e) => setCurrentTraveler({ ...currentTraveler, dob: e.target.value })}
+                    className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+                    max={new Date().toISOString().split('T')[0]}
+                  />
+                </div>
                 <button
                   onClick={handleAddTraveler}
-                  disabled={!currentTraveler.name || !currentTraveler.age || !currentTraveler.email || !currentTraveler.phone}
+                  disabled={!currentTraveler.name || !currentTraveler.age || !currentTraveler.email || !currentTraveler.phone || !currentTraveler.dob}
                   className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition-all"
                 >
                   {step < numTravelers ? 'Next Traveler' : 'Continue to Payment'}
@@ -1144,7 +1196,24 @@ function PolicyTooltip({ policyName, children }: { policyName: string; children:
             setPolicyDetails(`Policy: ${policyName}\n\nTravel insurance policy. Hover to learn more.`)
           }
         } catch (error) {
-          setPolicyDetails(`Policy: ${policyName}\n\nUnable to load details.`)
+          console.error('Failed to load policy details:', error)
+          // Try with cleaned name
+          const cleaned = cleanPolicyName(policyName)
+          if (cleaned && cleaned !== policyName) {
+            try {
+              const retryResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002'}/api/policy/details?policy_name=${encodeURIComponent(cleaned)}`)
+              const retryData = await retryResponse.json()
+              if (retryData.success) {
+                setPolicyDetails(retryData.summary)
+              } else {
+                setPolicyDetails(`Policy: ${policyName}\n\nUnable to load policy details. Please try again later.`)
+              }
+            } catch (retryError) {
+              setPolicyDetails(`Policy: ${policyName}\n\nUnable to load policy details. Please try again later.`)
+            }
+          } else {
+            setPolicyDetails(`Policy: ${policyName}\n\nUnable to load policy details. Please try again later.`)
+          }
         } finally {
           setIsLoading(false)
         }
@@ -1231,6 +1300,8 @@ export default function Home() {
   const [showHistory, setShowHistory] = useState(true)
   const [conversationThreads, setConversationThreads] = useState<ConversationThread[]>([])
   const [currentThreadId, setCurrentThreadId] = useState<string>('default')
+  const [editingThreadId, setEditingThreadId] = useState<string | null>(null)
+  const [editingThreadTitle, setEditingThreadTitle] = useState<string>('')
   // Removed manual language selector - using Google Translate only
   // FORCE onboarding to show by default - will only hide if data is 100% complete
   const [showOnboarding, setShowOnboarding] = useState(true)
@@ -1284,13 +1355,25 @@ export default function Home() {
 
   const t = translations[language as keyof typeof translations] || translations.en
 
-  // Load chat history from localStorage
+  // Load chat history from localStorage and remove duplicates
   useEffect(() => {
     const savedThreads = localStorage.getItem('wandersure_conversation_threads')
     if (savedThreads) {
       try {
         const threads = JSON.parse(savedThreads)
-        setConversationThreads(threads.map((t: any) => ({
+        
+        // Remove duplicates based on thread ID (keep first occurrence)
+        const uniqueThreads = threads.filter((t: any, index: number, self: any[]) => 
+          index === self.findIndex((t2: any) => t2.id === t.id)
+        )
+        
+        // If duplicates were found, update localStorage
+        if (uniqueThreads.length !== threads.length) {
+          console.log(`🧹 Cleaned up ${threads.length - uniqueThreads.length} duplicate threads`)
+          localStorage.setItem('wandersure_conversation_threads', JSON.stringify(uniqueThreads))
+        }
+        
+        setConversationThreads(uniqueThreads.map((t: any) => ({
           ...t,
           timestamp: new Date(t.timestamp),
         })))
@@ -1300,31 +1383,125 @@ export default function Home() {
     }
   }, [])
 
-  // Save conversation threads
-  useEffect(() => {
-    if (messages.length > 0) {
-      const lastMessage = messages[messages.length - 1]
-      const title = messages[0].role === 'assistant' 
-        ? messages[0].content.substring(0, 50).replace(/[#*━]/g, '').trim()
-        : messages[0].content.substring(0, 50).trim()
-      
-      const thread: ConversationThread = {
-        id: currentThreadId,
-        title: title || 'New Conversation',
-        lastMessage: lastMessage.content.substring(0, 80).replace(/[#*━]/g, '').trim(),
-        timestamp: lastMessage.timestamp,
-        role: 'travel_agent', // Default role for compatibility
-        messageCount: messages.length,
+  // Helper function to generate a better chat title
+  const generateChatTitle = (messages: Message[]): string => {
+    if (messages.length === 0) return 'New Chat'
+    
+    // Skip greeting messages and find first meaningful message
+    const greetingPatterns = [
+      /^👋\s*Welcome/i,
+      /^👋\s*Hi/i,
+      /Welcome!.*Travel/i,
+      /I'm Wanda/i
+    ]
+    
+    // Find first user message or first non-greeting assistant message
+    let titleMessage = null
+    for (const msg of messages) {
+      if (msg.role === 'user') {
+        titleMessage = msg
+        break
+      } else if (msg.role === 'assistant' && !greetingPatterns.some(pattern => pattern.test(msg.content))) {
+        titleMessage = msg
+        break
       }
-
-      setConversationThreads(prev => {
-        const filtered = prev.filter(t => t.id !== currentThreadId)
-        const updated = [thread, ...filtered].slice(0, 20)
-        localStorage.setItem('wandersure_conversation_threads', JSON.stringify(updated))
-        return updated
-      })
     }
-  }, [messages.length])
+    
+    // If no good message found, use first message but clean it up
+    if (!titleMessage) {
+      titleMessage = messages[0]
+    }
+    
+    // Extract title from message content
+    let title = titleMessage.content
+      .replace(/[#*━]/g, '') // Remove markdown
+      .replace(/👋/g, '') // Remove emojis that might cause issues
+      .replace(/\*\*([^*]+)\*\*/g, '$1') // Remove bold markers but keep text
+      .replace(/\[IMAGE:[^\]]+\]/g, '') // Remove image tags
+      .replace(/\n+/g, ' ') // Replace newlines with spaces
+      .trim()
+    
+    // Take first 40 characters and try to end at word boundary
+    if (title.length > 40) {
+      title = title.substring(0, 40)
+      const lastSpace = title.lastIndexOf(' ')
+      if (lastSpace > 20) {
+        title = title.substring(0, lastSpace)
+      }
+      title += '...'
+    }
+    
+    // If still empty or just greeting, use default
+    if (!title || title.length < 3 || greetingPatterns.some(pattern => pattern.test(title))) {
+      // Try to extract from trip details if available
+      const tripDetails = messages.find(m => m.trip_details)?.trip_details
+      if (tripDetails?.destination) {
+        return `Trip to ${tripDetails.destination}`
+      }
+      return 'New Chat'
+    }
+    
+    return title || 'New Chat'
+  }
+
+  // Track saved threads to prevent duplicates
+  const lastSavedStateRef = useRef<{ threadId: string; messageCount: number } | null>(null)
+  
+  // Save conversation threads - but only update existing, don't create duplicates
+  useEffect(() => {
+    // Skip if creating new chat, no messages, or default thread
+    if (messages.length === 0 || isCreatingNewChatRef.current || currentThreadId === 'default') {
+      return
+    }
+    
+    // Don't save if we just saved this exact state (prevent duplicate saves)
+    if (lastSavedStateRef.current?.threadId === currentThreadId && 
+        lastSavedStateRef.current?.messageCount === messages.length) {
+      return
+    }
+    
+    const lastMessage = messages[messages.length - 1]
+    const title = generateChatTitle(messages)
+    
+    // Don't save empty or greeting-only chats (wait for user interaction)
+    if (title === 'New Chat' && messages.length === 1 && messages[0].role === 'assistant') {
+      return
+    }
+    
+    const thread: ConversationThread = {
+      id: currentThreadId,
+      title: title,
+      lastMessage: lastMessage.content.substring(0, 80).replace(/[#*━]/g, '').trim(),
+      timestamp: lastMessage.timestamp,
+      role: 'travel_agent', // Default role for compatibility
+      messageCount: messages.length,
+    }
+
+    setConversationThreads(prev => {
+      // Remove any existing threads with this ID first (prevent duplicates)
+      const filtered = prev.filter(t => t.id !== currentThreadId)
+      
+      // Check localStorage for duplicates too
+      const storedThreads = JSON.parse(localStorage.getItem('wandersure_conversation_threads') || '[]')
+      const cleanedStored = storedThreads.filter((t: any) => t.id !== currentThreadId)
+      
+      // Add thread to front, remove duplicates, limit to 20
+      const updated = [thread, ...filtered]
+      const unique = updated.filter((t, idx, arr) => arr.findIndex(t2 => t2.id === t.id) === idx)
+      const limited = unique.slice(0, 20)
+      
+      // Save to localStorage
+      localStorage.setItem('wandersure_conversation_threads', JSON.stringify(limited.map(t => ({
+        ...t,
+        timestamp: t.timestamp.toISOString()
+      }))))
+      
+      // Track what we just saved
+      lastSavedStateRef.current = { threadId: currentThreadId, messageCount: messages.length }
+      
+      return limited
+    })
+  }, [messages.length, currentThreadId])
 
   useEffect(() => {
     scrollToBottom()
@@ -1354,78 +1531,68 @@ export default function Home() {
     onboardingCheckedRef.current = true
     console.log('🔍 Onboarding check on mount (FIRST TIME ONLY)...')
     
-    const hasOnboarded = localStorage.getItem('wandersure_onboarded')
-    const savedUserData = localStorage.getItem('wandersure_user_data')
-    
-    console.log('🔍 Found in localStorage:', { hasOnboarded, hasUserData: !!savedUserData })
-    
-    // ONLY hide if we have BOTH flag AND complete valid data
-    if (hasOnboarded === 'true' && savedUserData) {
-      try {
-        const parsed = JSON.parse(savedUserData)
-        console.log('🔍 Parsed data:', parsed)
-        
-        // EXTREMELY STRICT: age must be number 1-120, interests must be array with items
-        const hasValidAge = parsed.age && typeof parsed.age === 'number' && parsed.age > 0 && parsed.age <= 120
-        const hasValidInterests = Array.isArray(parsed.interests) && parsed.interests.length > 0
-        
-        console.log('🔍 Validation:', { hasValidAge, hasValidInterests, age: parsed.age, ageType: typeof parsed.age, interests: parsed.interests })
-        
-        if (hasValidAge && hasValidInterests) {
-          // Data is 100% complete - hide onboarding
-          setUserData(parsed)
-          setShowOnboarding(false)
-          console.log('✅ Hiding onboarding - data is complete')
-        } else {
-          // Data incomplete - FORCE show onboarding and clear invalid flag
-          localStorage.removeItem('wandersure_onboarded')
-          setShowOnboarding(true)
-          console.log('⚠️ FORCE showing onboarding - data incomplete, cleared flag')
-        }
-      } catch (e) {
-        // Invalid data - FORCE show onboarding and clear everything
-        localStorage.removeItem('wandersure_onboarded')
-        localStorage.removeItem('wandersure_user_data')
-        setShowOnboarding(true)
-        console.log('⚠️ FORCE showing onboarding - parse error, cleared storage:', e)
-      }
-    } else {
-      // No data - FORCE show onboarding
-      setShowOnboarding(true)
-      console.log('⚠️ FORCE showing onboarding - no data found')
-    }
-  }, []) // Run ONLY once on mount
-  
-  // Watch for any attempts to hide onboarding incorrectly
-  useEffect(() => {
-    // If onboarding is hidden, verify it should be
-    if (!showOnboarding) {
+    // Add a small delay to ensure component is fully mounted
+    const checkTimer = setTimeout(() => {
       const hasOnboarded = localStorage.getItem('wandersure_onboarded')
       const savedUserData = localStorage.getItem('wandersure_user_data')
       
-      // If missing data, force show
-      if (!hasOnboarded || !savedUserData) {
-        console.log('🔧 RE-SHOWING onboarding - data missing')
-        setShowOnboarding(true)
-        return
-      }
+      console.log('🔍 Found in localStorage:', { hasOnboarded, hasUserData: !!savedUserData })
       
-      // Validate data
-      try {
-        const parsed = JSON.parse(savedUserData)
-        const hasValidAge = parsed.age && typeof parsed.age === 'number' && parsed.age > 0 && parsed.age <= 120
-        const hasValidInterests = Array.isArray(parsed.interests) && parsed.interests.length > 0
-        
-        if (!hasValidAge || !hasValidInterests) {
-          console.log('🔧 RE-SHOWING onboarding - invalid data')
+      // ONLY hide if we have BOTH flag AND complete valid data
+      if (hasOnboarded === 'true' && savedUserData) {
+        try {
+          const parsed = JSON.parse(savedUserData)
+          console.log('🔍 Parsed data:', parsed)
+          
+          // Check if data has travelers array (new structure) or old structure
+          const hasTravelersArray = Array.isArray(parsed.travelers) && parsed.travelers.length > 0
+          const hasOldStructure = parsed.age && typeof parsed.age === 'number' && parsed.age > 0 && parsed.age <= 120 && Array.isArray(parsed.interests) && parsed.interests.length > 0
+          
+          // Validate travelers array structure if present
+          let hasValidTravelers = false
+          if (hasTravelersArray) {
+            hasValidTravelers = parsed.travelers.every((t: any) => 
+              t.age && typeof t.age === 'number' && t.age > 0 && t.age <= 120 &&
+              Array.isArray(t.interests) && t.interests.length > 0
+            )
+          }
+          
+          console.log('🔍 Validation:', { hasTravelersArray, hasValidTravelers, hasOldStructure, travelers: parsed.travelers })
+          
+          if (hasValidTravelers || hasOldStructure) {
+            // Data is 100% complete - hide onboarding
+            setUserData(parsed)
+            setShowOnboarding(false)
+            console.log('✅ Hiding onboarding - data is complete')
+          } else {
+            // Data incomplete - CLEAR everything and FORCE show onboarding
+            localStorage.removeItem('wandersure_onboarded')
+            localStorage.removeItem('wandersure_user_data')
+            setShowOnboarding(true)
+            console.log('⚠️ FORCE showing onboarding - data incomplete, cleared all data')
+          }
+        } catch (e) {
+          // Invalid data - FORCE show onboarding and clear everything
+          localStorage.removeItem('wandersure_onboarded')
+          localStorage.removeItem('wandersure_user_data')
           setShowOnboarding(true)
+          console.log('⚠️ FORCE showing onboarding - parse error, cleared storage:', e)
         }
-      } catch (e) {
-        console.log('🔧 RE-SHOWING onboarding - parse error')
+      } else {
+        // No data - CLEAR any partial data and FORCE show onboarding
+        localStorage.removeItem('wandersure_onboarded')
+        localStorage.removeItem('wandersure_user_data')
         setShowOnboarding(true)
+        console.log('⚠️ FORCE showing onboarding - no data found, cleared any partial data')
       }
-    }
-  }, [showOnboarding])
+    }, 100) // Small delay to ensure component is ready
+    
+    return () => clearTimeout(checkTimer)
+  }, []) // Run ONLY once on mount
+  
+  // REMOVED: Watch effect that was causing popup to disappear
+  // The validation now only happens on mount, and the popup will stay open
+  // until the user explicitly completes the onboarding via handleOnboardingComplete
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -1470,6 +1637,35 @@ export default function Home() {
     }
   }
 
+  // Rename thread
+  const renameThread = (threadId: string, newTitle: string) => {
+    if (!newTitle.trim()) {
+      setEditingThreadId(null)
+      return
+    }
+    
+    setConversationThreads(prev => prev.map(t => 
+      t.id === threadId ? { ...t, title: newTitle.trim() } : t
+    ))
+    
+    // Update in localStorage
+    const threads = JSON.parse(localStorage.getItem('wandersure_conversation_threads') || '[]')
+    const updatedThreads = threads.map((t: any) => 
+      t.id === threadId ? { ...t, title: newTitle.trim() } : t
+    )
+    localStorage.setItem('wandersure_conversation_threads', JSON.stringify(updatedThreads))
+    
+    setEditingThreadId(null)
+    setEditingThreadTitle('')
+  }
+  
+  // Start editing thread title
+  const startEditingThread = (thread: ConversationThread, e: React.MouseEvent) => {
+    e.stopPropagation() // Prevent thread loading
+    setEditingThreadId(thread.id)
+    setEditingThreadTitle(thread.title)
+  }
+  
   // Load conversation thread
   const loadThread = (threadId: string) => {
     // Save current messages before switching
@@ -1502,44 +1698,63 @@ export default function Home() {
     }
   }
   
+  // Track if new chat is being created to prevent duplicates
+  const isCreatingNewChatRef = useRef(false)
+  const [isCreatingNewChat, setIsCreatingNewChatState] = useState(false)
+  
   // Create new chat
-  const createNewChat = () => {
-    // Save current chat to history
-    if (messages.length > 0) {
-      const title = messages[0].content.substring(0, 50).replace(/[#*━]/g, '').trim() || 'Chat'
-      const newThread: ConversationThread = {
-        id: `thread_${Date.now()}`,
-        title: title,
-        lastMessage: messages[messages.length - 1].content.substring(0, 80),
-        timestamp: new Date(),
-        role: 'travel_agent',
-        messageCount: messages.length
+  const createNewChat = useCallback(() => {
+    // Prevent duplicate creation using ref (more reliable than state)
+    if (isCreatingNewChatRef.current) {
+      console.log('⏭️ Already creating new chat, skipping duplicate request')
+      return
+    }
+    
+    isCreatingNewChatRef.current = true
+    setIsCreatingNewChatState(true)
+    
+    // Save current messages to thread storage BEFORE switching (synchronous save)
+    if (messages.length > 0 && currentThreadId && currentThreadId !== 'default') {
+      try {
+        // Save messages immediately before state changes
+        const messagesToSave = messages.map(m => ({ ...m, timestamp: m.timestamp.toISOString() }))
+        localStorage.setItem(`wandersure_thread_${currentThreadId}`, JSON.stringify(messagesToSave))
+        console.log(`💾 Saved ${messages.length} messages to thread ${currentThreadId}`)
+      } catch (error) {
+        console.error('Failed to save messages before switching:', error)
       }
       
-      setConversationThreads(prev => [newThread, ...prev])
-      
-      // Save to localStorage
-      const threads = JSON.parse(localStorage.getItem('wandersure_conversation_threads') || '[]')
-      threads.unshift({
-        ...newThread,
-        messages: messages.map(m => ({ ...m, timestamp: m.timestamp.toISOString() }))
-      })
-      localStorage.setItem('wandersure_conversation_threads', JSON.stringify(threads))
+      // The useEffect will handle saving to threads list automatically
+      // Don't manually add here to avoid duplicates
     }
     
-    // Save current messages before switching
-    if (messages.length > 0 && currentThreadId) {
-      localStorage.setItem(`wandersure_thread_${currentThreadId}`, JSON.stringify(
-        messages.map(m => ({ ...m, timestamp: m.timestamp.toISOString() }))
-      ))
-    }
+    // Create unique thread ID using timestamp + random number to avoid collisions
+    // Use performance.now() for better precision
+    const timestamp = Date.now()
+    const random = Math.random().toString(36).substring(2, 9)
+    const newThreadId = `thread_${timestamp}_${random}`
     
-    // Reset for new chat
+    // Reset state for new chat - trigger onboarding popup for new chat
+    // IMPORTANT: Clear messages AFTER saving to prevent loss
     setMessages([])
-    const newThreadId = `thread_${Date.now()}`
     setCurrentThreadId(newThreadId)
-    initializeGreeting()
-  }
+    
+    // Reset saved state tracking
+    lastSavedStateRef.current = null
+    
+    // Clear onboarding flag to show popup for new chat
+    localStorage.removeItem('wandersure_onboarded')
+    setShowOnboarding(true)
+    
+    // Reset creating flag after a delay (allows useEffect to process)
+    setTimeout(() => {
+      isCreatingNewChatRef.current = false
+      setIsCreatingNewChatState(false)
+    }, 2000) // Increased delay to ensure useEffect completes and prevents rapid clicks
+    
+    // Don't initialize greeting immediately - wait for onboarding
+    // initializeGreeting()
+  }, [messages, currentThreadId])
 
   // Save messages to localStorage when they change
   useEffect(() => {
@@ -1884,9 +2099,60 @@ export default function Home() {
             console.log('✅ Received Policy_Wordings policies:', quotes.map((q: any) => q.plan_name))
           }
           
+          // Build traveler names list - check ALL possible sources
+          let travelersInfo = ''
+          
+          // Helper to clean names (remove repeated characters)
+          const cleanName = (name: string) => {
+            if (!name) return ''
+            // Remove repeated character patterns like "MMMMssss" -> "Ms"
+            return name.replace(/(.)\1{2,}/g, '$1').trim()
+          }
+          
+          // Try travelers array first
+          if (tripInfo.travelers && Array.isArray(tripInfo.travelers) && tripInfo.travelers.length > 0) {
+            const names = tripInfo.travelers
+              .map((t: any) => cleanName(t?.name || ''))
+              .filter((name: string) => name.trim().length > 0)
+            if (names.length > 0) {
+              travelersInfo = `\n• Travelers (${names.length}): ${names.join(', ')}`
+            }
+          }
+          
+          // If no names from travelers array, try traveler_names
+          if (!travelersInfo && tripInfo.traveler_names && Array.isArray(tripInfo.traveler_names) && tripInfo.traveler_names.length > 0) {
+            const cleanedNames = tripInfo.traveler_names
+              .map((name: string) => cleanName(name))
+              .filter((name: string) => name.trim().length > 0)
+            if (cleanedNames.length > 0) {
+              travelersInfo = `\n• Travelers (${cleanedNames.length}): ${cleanedNames.join(', ')}`
+            }
+          }
+          
+          // If still no names, show count
+          if (!travelersInfo) {
+            const numTravelers = tripInfo.pax || 
+                                 (Array.isArray(tripInfo.travelers) ? tripInfo.travelers.length : null) ||
+                                 (Array.isArray(tripInfo.traveler_names) ? tripInfo.traveler_names.length : null) ||
+                                 (typeof tripInfo.travelers === 'number' ? tripInfo.travelers : null) ||
+                                 (tripInfo.adults && tripInfo.children ? (tripInfo.adults + tripInfo.children) : null) ||
+                                 1
+            if (numTravelers) {
+              travelersInfo = `\n• Number of Travelers: ${numTravelers}`
+            }
+          }
+          
+          // Build content - ensure we show something even if some fields are missing
+          let extractedDetails = ''
+          if (tripInfo.destination) extractedDetails += `• Destination: ${tripInfo.destination}\n`
+          if (tripInfo.departure_date) extractedDetails += `• Departure: ${tripInfo.departure_date}\n`
+          if (tripInfo.return_date) extractedDetails += `• Return: ${tripInfo.return_date}\n`
+          
+          const content = `✅ **Document Processed Successfully!**\n\n### 📄 Trip Details Extracted\n\n${extractedDetails || 'No trip details extracted. Please provide trip information manually.'}${travelersInfo}${claimsSection}\n\n### 💡 Insurance Recommendations\n\n${quotes.length > 0 ? quotes.map((q: any, i: number) => `• **${q.plan_name}**: $${q.price.toFixed(2)} ${q.currency || 'SGD'} ${q.score ? `(Score: ${q.score}/100)` : ''} - ${q.recommended_for}`).join('\n') : 'No quotes available'}\n\nWhich plan would you like to learn more about?`
+          
           const successMsg: Message = {
             role: 'assistant',
-            content: `✅ **Document Processed Successfully!**\n\n### 📄 Trip Details Extracted\n\n${tripInfo.destination ? `• Destination: ${tripInfo.destination}` : ''}${tripInfo.departure_date ? `\n• Departure: ${tripInfo.departure_date}` : ''}${tripInfo.return_date ? `\n• Return: ${tripInfo.return_date}` : ''}${tripInfo.pax ? `\n• Travelers: ${tripInfo.pax}` : tripInfo.travelers?.length ? `\n• Travelers: ${tripInfo.travelers.length}` : ''}${claimsSection}\n\n### 💡 Insurance Recommendations\n\n${quotes.length > 0 ? quotes.map((q: any, i: number) => `• **${q.plan_name}**: $${q.price.toFixed(2)} ${q.currency || 'SGD'} ${q.score ? `(Score: ${q.score}/100)` : ''} - ${q.recommended_for}`).join('\n') : 'No quotes available'}\n\nWhich plan would you like to learn more about?`,
+            content: content,
             timestamp: new Date(),
             quotes: quotes,
             quote_id: quoteData.quote_id || null,
@@ -2290,10 +2556,11 @@ export default function Home() {
                 </div>
               ) : (
                 conversationThreads.map((thread) => {
+                  const isEditing = editingThreadId === thread.id
                   return (
                     <div
                       key={thread.id}
-                      onClick={() => loadThread(thread.id)}
+                      onClick={() => !isEditing && loadThread(thread.id)}
                       className={`p-4 rounded-xl cursor-pointer transition-all duration-200 hover:bg-slate-700/40 border backdrop-blur-sm group ${
                         thread.id === currentThreadId 
                           ? 'bg-gradient-to-br from-blue-600/20 to-indigo-600/20 border-blue-500/50 shadow-lg ring-2 ring-blue-500/30' 
@@ -2305,14 +2572,75 @@ export default function Home() {
                           <Sparkles className="w-4 h-4 text-blue-300" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-white truncate">{thread.title}</p>
+                          {isEditing ? (
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={editingThreadTitle}
+                                onChange={(e) => setEditingThreadTitle(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    renameThread(thread.id, editingThreadTitle)
+                                  } else if (e.key === 'Escape') {
+                                    setEditingThreadId(null)
+                                    setEditingThreadTitle('')
+                                  }
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex-1 px-2 py-1 bg-slate-700/50 border border-blue-500/50 rounded text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                                autoFocus
+                              />
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  renameThread(thread.id, editingThreadTitle)
+                                }}
+                                className="p-1 hover:bg-green-600/20 rounded transition-colors"
+                                title="Save"
+                              >
+                                <Check className="w-4 h-4 text-green-400" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setEditingThreadId(null)
+                                  setEditingThreadTitle('')
+                                }}
+                                className="p-1 hover:bg-red-600/20 rounded transition-colors"
+                                title="Cancel"
+                              >
+                                <XIcon className="w-4 h-4 text-red-400" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-sm font-semibold text-white break-words" style={{ 
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                                wordBreak: 'break-word'
+                              }} title={thread.title}>{thread.title}</p>
+                              <button
+                                onClick={(e) => startEditingThread(thread, e)}
+                                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-600/50 rounded transition-all flex-shrink-0"
+                                title="Rename chat"
+                              >
+                                <Edit2 className="w-3 h-3 text-slate-400 hover:text-blue-400" />
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
-                      <p className="text-xs text-slate-400 line-clamp-2 mb-3 leading-relaxed">{thread.lastMessage}</p>
-                      <div className="flex items-center justify-between text-xs text-slate-500">
-                        <span className="font-medium">{thread.messageCount} messages</span>
-                        <span>{new Date(thread.timestamp).toLocaleDateString()}</span>
-                      </div>
+                      {!isEditing && (
+                        <>
+                          <p className="text-xs text-slate-400 line-clamp-2 mb-3 leading-relaxed">{thread.lastMessage}</p>
+                          <div className="flex items-center justify-between text-xs text-slate-500">
+                            <span className="font-medium">{thread.messageCount} messages</span>
+                            <span>{new Date(thread.timestamp).toLocaleDateString()}</span>
+                          </div>
+                        </>
+                      )}
                     </div>
                   )
                 })
@@ -2337,7 +2665,12 @@ export default function Home() {
                     </button>
                   )}
                   <button
-                    onClick={createNewChat}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      createNewChat()
+                    }}
+                    disabled={isCreatingNewChat}
                     className="p-2.5 hover:bg-slate-700/50 rounded-xl transition-all duration-200 hover:scale-105"
                     title="New Chat"
                   >
