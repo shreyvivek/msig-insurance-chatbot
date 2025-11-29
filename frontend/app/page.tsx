@@ -1,11 +1,9 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react'
-import { Send, Mic, Volume2, Sparkles, Plane, Upload, X, History, ChevronLeft, ExternalLink } from 'lucide-react'
+import { Send, Mic, Volume2, Sparkles, Plane, Upload, X, History, ChevronLeft, ExternalLink, User, CreditCard, ShoppingCart } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
-<<<<<<< Updated upstream
-=======
-import UserOnboarding from '../components/UserOnboarding'
+// import UserOnboarding from '../components/UserOnboarding' // Component not found, commented out
 
 // Declare Google Translate types at top level
 declare global {
@@ -326,7 +324,6 @@ function downloadPolicyReceipt(receiptData: {
     console.error('Failed to download receipt:', error)
   }
 }
->>>>>>> Stashed changes
 
 // Policy Card Component - Beautiful card for displaying policy info
 function PolicyCard({ policyName, onClick }: { policyName: string; onClick: () => void }) {
@@ -425,11 +422,6 @@ function PolicyModal({ policyName, isOpen, onClose }: { policyName: string; isOp
   )
 }
 
-<<<<<<< Updated upstream
-// Enhanced Message Renderer with cards
-function EnhancedMarkdown({ content }: { content: string }) {
-  const [selectedPolicy, setSelectedPolicy] = useState<string | null>(null)
-=======
 // Purchase Form Modal - Step by step form for collecting traveler details
 function PurchaseForm({ quote, quoteId, tripDetails, isOpen, onClose, onComplete }: {
   quote: any
@@ -1021,7 +1013,6 @@ function QuoteCard({ quote, quoteId, tripDetails, onPurchase, language = 'en', c
 // Enhanced Message Renderer with cards
 function EnhancedMarkdown({ content, quotes, language = 'en', claimsData }: { content: string; quotes?: any[]; language?: string; claimsData?: any }) {
   const [selectedPolicy, setSelectedPolicy] = useState<any | null>(null)
->>>>>>> Stashed changes
   
   // Extract policy mentions
   const policyRegex = /(TravelEasy|Scootsurance|MSIG|Policy:\s*[^\]]+)/gi
@@ -1225,6 +1216,10 @@ interface Message {
   timestamp: Date
   images?: Array<{ destination: string; keyword: string; url: string }>
   booking_links?: Array<{ type: string; platform: string; url: string; text: string }>
+  quotes?: any[]
+  quote_id?: string | null
+  trip_details?: any
+  suggested_questions?: Array<{ question: string; icon?: string; priority?: string }>
 }
 
 interface ConversationThread {
@@ -1248,10 +1243,21 @@ export default function Home() {
   const [showHistory, setShowHistory] = useState(true)
   const [conversationThreads, setConversationThreads] = useState<ConversationThread[]>([])
   const [currentThreadId, setCurrentThreadId] = useState<string>('default')
+  const [userData, setUserData] = useState<any>(null)
+  const [showOnboarding, setShowOnboarding] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const recognitionRef = useRef<any>(null)
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002'
+  
+  // Translation object for UI elements
+  const translations = {
+    en: { availablePlans: 'Available Plans', suggestedQuestions: 'Suggested Questions', buyNow: 'Buy Now' },
+    ta: { availablePlans: 'கிடைக்கும் திட்டங்கள்', suggestedQuestions: 'பரிந்துரைக்கப்பட்ட கேள்விகள்', buyNow: 'இப்போது வாங்க' },
+    zh: { availablePlans: '可用计划', suggestedQuestions: '建议问题', buyNow: '立即购买' },
+    ms: { availablePlans: 'Pelan Tersedia', suggestedQuestions: 'Soalan yang Dicadangkan', buyNow: 'Beli Sekarang' }
+  }
+  const t = translations[language as keyof typeof translations] || translations.en
 
   // Load chat history from localStorage
   useEffect(() => {
@@ -1305,25 +1311,7 @@ export default function Home() {
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
-<<<<<<< Updated upstream
 
-  const initializeGreeting = async () => {
-    try {
-      const response = await fetch(`${API_URL}/api/greeting?user_id=user_${Date.now()}&language=${language}`)
-      const data = await response.json()
-      setMessages([{
-        role: 'assistant',
-        content: data.greeting || "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👋 Welcome! I'm Wanda, Your Travel Insurance Agent\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n• Expert travel insurance advice\n• Compare policies instantly\n• Get quotes in seconds\n• Secure payment in chat\n\nHow can I help protect your trip? ✈️",
-        timestamp: new Date()
-      }])
-    } catch (error) {
-      setMessages([{
-        role: 'assistant',
-        content: "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👋 Welcome! I'm Wanda, Your Travel Insurance Agent\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n• Expert travel insurance advice\n• Compare policies instantly\n• Get quotes in seconds\n\nHow can I help protect your trip? ✈️",
-        timestamp: new Date()
-      }])
-=======
-  
   // Handle user onboarding completion
   const handleOnboardingComplete = (userData: any) => {
     setUserData(userData)
@@ -1503,9 +1491,12 @@ export default function Home() {
     } catch (error) {
       // Keep the default greeting if API fails
       console.log('Greeting API not available, using default:', error)
->>>>>>> Stashed changes
     }
   }
+
+  useEffect(() => {
+    initializeGreeting()
+  }, [showOnboarding])
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return
@@ -1522,17 +1513,6 @@ export default function Home() {
     setIsLoading(true)
 
     try {
-<<<<<<< Updated upstream
-      const response = await fetch(`${API_URL}/api/ask`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question: currentInput,
-          language: language,
-          user_id: 'default_user',
-          is_voice: false
-        })
-=======
       // Get latest quotes and trip details from messages for context
       const latestQuoteData = messages
         .filter((m: Message) => m.quotes && m.quotes.length > 0)
@@ -1560,7 +1540,6 @@ export default function Home() {
           user_data: userData  // Pass user data (age, interests, medical conditions)
         },
         isVoice: false
->>>>>>> Stashed changes
       })
 
       if (!result.success) {
@@ -1592,11 +1571,6 @@ export default function Home() {
         return
       }
 
-<<<<<<< Updated upstream
-      const data = await response.json()
-      
-      const answerText = typeof data === 'string' ? data : (data.answer || data.message || 'I apologize, but I encountered an error.')
-=======
       const data = result.data as any
       const answerText = typeof data === 'string' ? data : (data.answer || data.message || data.content || 'I apologize, but I encountered an error.')
       
@@ -1610,11 +1584,10 @@ export default function Home() {
           finalContent = claimsSection + '\n\n' + answerText
         }
       }
->>>>>>> Stashed changes
       
       const assistantMessage: Message = {
         role: 'assistant',
-        content: answerText,
+        content: finalContent,
         timestamp: new Date(),
         images: data.images || [],
         booking_links: data.booking_links || []
@@ -1623,22 +1596,14 @@ export default function Home() {
       setMessages(prev => [...prev, assistantMessage])
       
       if (isSpeaking) {
-        speakText(answerText)
+        speakText(finalContent || answerText)
       }
-<<<<<<< Updated upstream
-    } catch (error) {
-      console.error('Error:', error)
-      const errorMessage: Message = {
-        role: 'assistant',
-        content: '⚠️ **Error**\n\n• I encountered an error processing your request\n• Please try again',
-=======
     } catch (error: any) {
       console.error('Unexpected error:', error)
       
       const errorMessage: Message = {
         role: 'assistant',
         content: '**😅 Oops!**\n\n• I encountered an unexpected error\n• But don\'t worry - I\'m here to help!\n\n**Try:**\n• Rephrasing your question\n• Asking something simpler like "What can you help me with?"\n• Or just say "hi" to start fresh',
->>>>>>> Stashed changes
         timestamp: new Date()
       }
       setMessages(prev => [...prev, errorMessage])
@@ -1690,6 +1655,17 @@ export default function Home() {
           })
           
           const quoteData = await quoteResponse.json()
+          const quotes = quoteData.quotes || []
+          
+          // Build claims section if available
+          let claimsSection = ''
+          if (quoteData.claims_analysis && quoteData.claims_analysis.has_data) {
+            const claims = quoteData.claims_analysis
+            if (claims.recommendations && claims.recommendations.length > 0) {
+              const top = claims.recommendations[0]
+              claimsSection = `\n\n### 🎯 Claims Insights\n\n**${top.incidence_rate || 'N/A'}** of travelers have claimed for **${top.claim_type || 'incidents'}** with an average cost of **$${top.average_cost?.toFixed(2) || '0.00'} SGD**.`
+            }
+          }
           
           // Ensure extracted_data is preserved in trip_details
           const tripDetailsWithExtracted = {
@@ -1700,13 +1676,6 @@ export default function Home() {
           
           const successMsg: Message = {
             role: 'assistant',
-<<<<<<< Updated upstream
-            content: `✅ **Document Processed Successfully!**\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📄 Trip Details Extracted\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${tripInfo.destination ? `• Destination: ${tripInfo.destination}` : ''}${tripInfo.departure_date ? `\n• Departure: ${tripInfo.departure_date}` : ''}${tripInfo.return_date ? `\n• Return: ${tripInfo.return_date}` : ''}${tripInfo.travelers?.length ? `\n• Travelers: ${tripInfo.travelers.length}` : ''}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💡 Insurance Recommendations\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${quoteData.quotes?.map((q: any, i: number) => `• **${q.plan_name}**: $${q.price.toFixed(2)} - ${q.recommended_for}`).join('\n')}\n\nWhich plan would you like to learn more about?`,
-            timestamp: new Date()
-          }
-          
-          setMessages(prev => [...prev, successMsg])
-=======
             content: `✅ **Document Processed Successfully!**\n\n### 📄 Trip Details Extracted\n\n${tripInfo.destination ? `• Destination: ${tripInfo.destination}` : ''}${tripInfo.departure_date ? `\n• Departure: ${tripInfo.departure_date}` : ''}${tripInfo.return_date ? `\n• Return: ${tripInfo.return_date}` : ''}${tripInfo.pax ? `\n• Travelers: ${tripInfo.pax}` : tripInfo.travelers?.length ? `\n• Travelers: ${tripInfo.travelers.length}` : ''}${claimsSection}\n\n### 💡 Insurance Recommendations\n\n${quotes.length > 0 ? quotes.map((q: any, i: number) => `• **${q.plan_name}**: $${q.price.toFixed(2)} ${q.currency || 'SGD'} ${q.score ? `(Score: ${q.score}/100)` : ''} - ${q.recommended_for}`).join('\n') : 'No quotes available'}\n\nWhich plan would you like to learn more about?`,
             timestamp: new Date(),
             quotes: quotes,
@@ -1749,7 +1718,6 @@ export default function Home() {
             trip_details: tripDetailsWithExtracted
           }
           setMessages(prev => [...prev, partialMsgObj])
->>>>>>> Stashed changes
         } else {
           throw new Error('Failed to extract trip information')
         }
@@ -2026,8 +1994,7 @@ export default function Home() {
                   No conversation history yet
                 </div>
               ) : (
-                conversationThreads.map((thread) => {
-                  return (
+                conversationThreads.map((thread) => (
                     <div
                       key={thread.id}
                       onClick={() => {
@@ -2052,8 +2019,7 @@ export default function Home() {
                         <span>{new Date(thread.timestamp).toLocaleDateString()}</span>
                       </div>
                     </div>
-                  )
-                })
+                  ))
               )}
             </div>
           </div>
@@ -2108,25 +2074,17 @@ export default function Home() {
                         <div className="relative bg-gray-800/95 rounded-2xl px-6 py-6 shadow-2xl border border-gray-700/50 backdrop-blur-md">
                           {/* Enhanced content with cards */}
                           <div className="relative prose prose-invert prose-sm max-w-none" style={{ fontFamily: 'Inter, system-ui, -apple-system, sans-serif' }}>
-                        <EnhancedMarkdown
-                          content={message.content
-<<<<<<< Updated upstream
-                            .replace(/━━━+/g, '\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n')
-                            .replace(/\*\*(Policy:|TravelEasy|Scootsurance|MSIG[^\*]*)\*\*/gi, '**$1**')
-                            .replace(/(Policy:|TravelEasy|Scootsurance|MSIG[^•\n]*)/gi, '**$1**')}
-                        />
-                        </div>
-                      
-=======
-                            .replace(/━━━+/g, '\n\n### ') // Convert separator lines to section headers
-                            .replace(/^━+$/gm, '### ') // Convert standalone separator lines
-                            .replace(/\*\*(Policy:|INTERNATIONAL TRAVEL|MHInsure Travel|Scootsurance|MSIG[^\*]*)\*\*/gi, '**$1**')
-                            .replace(/(Policy:|INTERNATIONAL TRAVEL|MHInsure Travel|Scootsurance|MSIG[^•\n]*)/gi, '**$1**')}
-                          quotes={message.quotes}
-                          language={language}
-                          claimsData={(message as any).recommendations?.claims_data || (message as any).claims_data}
-                        />
-                        </div>
+                            <EnhancedMarkdown
+                              content={message.content
+                                .replace(/━━━+/g, '\n\n### ') // Convert separator lines to section headers
+                                .replace(/^━+$/gm, '### ') // Convert standalone separator lines
+                                .replace(/\*\*(Policy:|INTERNATIONAL TRAVEL|MHInsure Travel|Scootsurance|MSIG[^\*]*)\*\*/gi, '**$1**')
+                                .replace(/(Policy:|INTERNATIONAL TRAVEL|MHInsure Travel|Scootsurance|MSIG[^•\n]*)/gi, '**$1**')}
+                              quotes={message.quotes}
+                              language={language}
+                              claimsData={(message as any).recommendations?.claims_data || (message as any).claims_data}
+                            />
+                          </div>
                       
                         {/* Insurance Quotes with Purchase Option */}
                         {message.quotes && message.quotes.length > 0 && (
@@ -2153,7 +2111,7 @@ export default function Home() {
                                 <QuoteCard
                                   key={idx}
                                   quote={quote}
-                                  quoteId={message.quote_id}
+                                  quoteId={message.quote_id || undefined}
                                   tripDetails={message.trip_details}
                                   language={language}
                                   claimsAnalysis={(message as any).recommendations?.claims_data || (message as any).claims_data}
@@ -2304,8 +2262,7 @@ export default function Home() {
                             )}
                           </div>
                         )}
-                      
->>>>>>> Stashed changes
+
                         {/* Booking Links */}
                         {message.booking_links && message.booking_links.length > 0 && (
                           <div className="mt-4 pt-4 border-t border-gray-700/50">
@@ -2326,7 +2283,6 @@ export default function Home() {
                           </div>
                         )}
 
-<<<<<<< Updated upstream
                         {/* Images - Fixed with proper Unsplash URLs */}
                         {message.images && message.images.length > 0 && (
                           <div className="mt-6 grid grid-cols-2 gap-4">
@@ -2348,7 +2304,15 @@ export default function Home() {
                                       target.src = `https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800&h=600&fit=crop&q=80`
                                       target.onerror = () => {
                                         target.src = `https://via.placeholder.com/800x600/1f2937/60a5fa?text=${encodeURIComponent(img.destination)}`
-=======
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+
                         {/* Suggested Questions - Clickable Buttons */}
                         {message.suggested_questions && message.suggested_questions.length > 0 && (
                           <div className="mt-6 pt-6 border-t border-gray-700/50">
@@ -2422,26 +2386,27 @@ export default function Home() {
                                         quotes: data.quotes || [],
                                         quote_id: data.quote_id || null,
                                         trip_details: data.trip_details || null
->>>>>>> Stashed changes
                                       }
-                                    }}
-                                  />
-                                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent"></div>
-                                  <div className="absolute bottom-0 left-0 right-0 p-4">
-                                    <p className="text-white text-sm font-semibold drop-shadow-lg">{img.destination}</p>
-                                    <p className="text-gray-300 text-xs mt-1">{img.keyword}</p>
-                                  </div>
-                                </div>
-                              )
-                            })}
+                                      
+                                      setMessages(prev => [...prev, assistantMsg])
+                                    } catch (error: any) {
+                                      console.error('Error handling suggested question:', error)
+                                    } finally {
+                                      setIsLoading(false)
+                                    }
+                                  }}
+                                >
+                                  {sq.question}
+                                </button>
+                              ))}
                           </div>
                         )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
                 
-                {message.role === 'user' && (
+                {message.role !== 'assistant' && (
                   <div className="relative group max-w-[85%] animate-slide-in-right">
                     <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl blur opacity-30 group-hover:opacity-50 transition-opacity animate-pulse-glow"></div>
                     <div className="relative bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-600 rounded-2xl px-6 py-4 shadow-xl border border-blue-400/20 transform transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl">
@@ -2449,8 +2414,8 @@ export default function Home() {
                     </div>
                   </div>
                 )}
-              </div>
-            ))}
+                </div>
+              ))}
             </div>
             
             {isLoading && (
@@ -2485,7 +2450,7 @@ export default function Home() {
             )}
             
             <div ref={messagesEndRef} />
-          </div>
+            </div>
           
           {/* File Upload Indicator - Dark Mode */}
           {uploadedFile && (
@@ -2584,7 +2549,6 @@ export default function Home() {
               </button>
             </div>
           </div>
-        </div>
         </div>
       </div>
     </div>

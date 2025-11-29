@@ -274,16 +274,6 @@ Provide:
 Format it beautifully for easy reading!"""
 
         try:
-<<<<<<< Updated upstream
-            response = self.client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.8  # Higher for more personality
-            )
-=======
             # Build conversation history for context (avoid repetition)
             conversation_messages = [
                 {"role": "system", "content": system_prompt},
@@ -299,7 +289,6 @@ Format it beautifully for easy reading!"""
             # Check if client is initialized
             if not self.client:
                 raise Exception("Groq client not initialized. Check GROQ_API_KEY environment variable.")
->>>>>>> Stashed changes
             
             try:
                 response = self.client.chat.completions.create(
@@ -392,92 +381,7 @@ Format it beautifully for easy reading!"""
         except Exception as e:
             logger.error(f"Image extraction failed: {e}")
         
-<<<<<<< Updated upstream
         return images
-=======
-        # Check if it's an API error (Groq/LLM related)
-        is_api_error = any(keyword in error_str for keyword in [
-            "api", "groq", "rate limit", "quota", "timeout", "connection", "network"
-        ])
-        
-        # Check if it's a policy coverage question
-        is_coverage_question = any(keyword in question_lower for keyword in [
-            "cover", "coverage", "does", "will", "include", "hiking", "sport", "activity"
-        ])
-        
-        # Check if specific policy is mentioned
-        policy_mentioned = None
-        if "scootsurance" in question_lower:
-            policy_mentioned = "Scootsurance"
-        elif "international travel" in question_lower or "international" in question_lower:
-            policy_mentioned = "INTERNATIONAL TRAVEL"
-        elif "mhinsure" in question_lower or "mh insure" in question_lower:
-            policy_mentioned = "MHInsure Travel"
-        elif "msig" in question_lower:
-            policy_mentioned = "INTERNATIONAL TRAVEL"  # Map MSIG to INTERNATIONAL TRAVEL
-        
-        # Try to provide helpful answer using policy intelligence
-        if is_insurance_question and is_coverage_question:
-            try:
-                from policy_intelligence import PolicyIntelligence
-                policy_intel = PolicyIntelligence()
-                
-                # Try to find relevant policy information
-                if policy_mentioned:
-                    policy_name_map = {
-                        "Scootsurance": "Scootsurance",
-                        "INTERNATIONAL TRAVEL": "INTERNATIONAL TRAVEL",
-                        "MHInsure Travel": "MHInsure Travel",
-                        "MSIG": "INTERNATIONAL TRAVEL"  # Map MSIG to INTERNATIONAL TRAVEL
-                    }
-                    policy_name = policy_name_map.get(policy_mentioned)
-                    
-                    if policy_name:
-                        # Try to search for coverage information
-                        policy_text = policy_intel.get_policy_text(policy_name)
-                        if policy_text:
-                            # Look for activity keywords in question
-                            activity_keywords = ["hiking", "trekking", "sport", "adventure", "activity", "activity"]
-                            mentioned_activities = [kw for kw in activity_keywords if kw in question_lower]
-                            
-                            # Search policy text for activity mentions
-                            policy_lower = policy_text.lower()
-                            has_coverage = any(act in policy_lower for act in mentioned_activities) if mentioned_activities else False
-                            
-                            if has_coverage:
-                                response = f"✅ Yes, **{policy_mentioned}** does provide coverage for {', '.join(mentioned_activities)} activities.\n\n"
-                                response += f"Based on the policy document, {policy_mentioned} includes coverage for adventure activities and sports. However, I recommend reviewing the specific terms and conditions in your policy document to confirm the exact coverage limits and any exclusions.\n\n"
-                                response += "Would you like me to check the specific coverage amounts or terms for your activities?"
-                            else:
-                                response = f"Let me check **{policy_mentioned}** coverage for your activities...\n\n"
-                                response += f"While I'm having trouble accessing the full policy details right now, **{policy_mentioned}** typically covers a range of travel activities. For specific coverage of hiking and adventure sports, I'd recommend:\n\n"
-                                response += "1. Reviewing the policy document's activity coverage section\n"
-                                response += "2. Checking if there are any activity exclusions or special requirements\n"
-                                response += "3. Contacting the insurance provider directly for confirmation\n\n"
-                                response += "Would you like me to help you find the specific policy document or contact information?"
-                            
-                            return response
-                
-                # Generic helpful response for coverage questions
-                return f"**I'm checking policy coverage for you...**\n\nWhile I'm having some technical difficulties accessing the full policy details right now, I can help you with:\n\n• **General coverage**: Most travel insurance policies cover hiking and adventure activities, but specific terms vary\n• **Activity-specific coverage**: Some policies may have exclusions or require additional coverage for extreme sports\n• **Policy documents**: I can help you locate the relevant policy documents to review specific coverage\n\nWould you like me to:\n1. Check specific policy documents for activity coverage?\n2. Help you compare coverage between different policies?\n3. Find contact information to verify coverage details?"
-                
-            except Exception as fallback_error:
-                logger.warning(f"Fallback policy check also failed: {fallback_error}")
-        
-        # API/Network error handling
-        if is_api_error:
-            # Don't return connection issue message here - let the error propagate
-            # This should only be used for actual network/API failures
-            raise Exception("LLM API call failed - this should be caught by the endpoint handler")
-        
-        # Generic helpful error for insurance questions
-        if is_insurance_question:
-            # Don't return generic error message - let it propagate to endpoint handler
-            raise Exception("LLM processing failed - this should be caught by the endpoint handler")
-        
-        # Generic helpful error for travel questions
-        return f"**Oops, I hit a snag!** 😅\n\nI'm having trouble processing that question right now. No worries though - here's what might help:\n\n• **Try rephrasing** - Sometimes a slightly different wording works better\n• **Break it down** - If your question is complex, try asking it in parts\n• **Try again** - This might just be a temporary glitch\n\nI'm here to help! What would you like to know about travel or insurance?"
->>>>>>> Stashed changes
     
     def _extract_booking_links(self, text: str, question: str) -> List[Dict]:
         """Extract booking links from response and question"""

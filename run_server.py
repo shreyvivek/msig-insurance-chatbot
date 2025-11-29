@@ -58,6 +58,9 @@ import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 
+# Initialize logger
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="WanderSure API", version="1.0.0")
 
 app.add_middleware(
@@ -147,72 +150,39 @@ from document_intelligence import DocumentIntelligence
 from predictive_intelligence import PredictiveIntelligence
 from payment_handler import PaymentHandler
 from conversation_handler import ConversationHandler
-<<<<<<< Updated upstream
-=======
-from user_profile_manager import UserProfileManager
-from partner_integrations import PartnerIntegrations
-from intelligent_recommender import IntelligentRecommender
-from pricing_calculator import PricingCalculator
-from policy_scorer import PolicyScorer
-from claims_analyzer import ClaimsAnalyzer
-from mcp_integrations import MCPIntegrations
-from activity_policy_matcher import ActivityPolicyMatcher
-from policy_simplifier import PolicySimplifier
-from taxonomy_matcher import TaxonomyMatcher
-from policy_metadata import PolicyMetadata
-from routers.v1 import router as v1_router
->>>>>>> Stashed changes
+
+# Import optional modules
+try:
+    from policy_metadata import PolicyMetadata
+    from policy_scorer import PolicyScorer
+except ImportError as e:
+    logger.warning(f"Optional modules not available: {e}")
 
 policy_intel = PolicyIntelligence()
 doc_intel = DocumentIntelligence()
 predictive_intel = PredictiveIntelligence()
 payment_handler = PaymentHandler()
 conversation = ConversationHandler()
-<<<<<<< Updated upstream
-=======
-user_profile_manager = UserProfileManager()
-partner_integrations = PartnerIntegrations()
-intelligent_recommender = IntelligentRecommender()
-pricing_calculator = PricingCalculator()
-claims_analyzer = ClaimsAnalyzer()
-# Get claims_db from claims_analyzer to pass to policy_scorer
-claims_db = claims_analyzer.claims_db if hasattr(claims_analyzer, 'claims_db') else None
-policy_scorer = PolicyScorer(claims_db=claims_db)
-mcp_integrations = MCPIntegrations()
-activity_matcher = ActivityPolicyMatcher()
-policy_simplifier = PolicySimplifier()
-taxonomy_matcher = TaxonomyMatcher()
-policy_metadata = PolicyMetadata(policy_intel)
 
-def inject_additional_products(ancileo_quotes: List[Dict], trip_details: Dict) -> List[Dict]:
-    """
-    Inject additional mock products when Ancileo returns only 1 quote
-    These simulate additional insurance products from Step 1 (local policies)
-    """
-    all_quotes = ancileo_quotes.copy()
-    
-    # Get base price from Ancileo quote for reference
-    base_price = ancileo_quotes[0].get("price", 50) if ancileo_quotes else 50
-    currency = ancileo_quotes[0].get("currency", "SGD") if ancileo_quotes else "SGD"
-    
-    # Use NEW policies from Policy_Wordings (NO mock products)
-    # These should come from taxonomy matching, not hardcoded here
-    # This function should not be used anymore - policies come from taxonomy_matcher
-    mock_products = []
-    
-    # Add mock products to quotes list
-    all_quotes.extend(mock_products)
-    
-    # Sort by price for better comparison
-    all_quotes.sort(key=lambda x: x.get("price", 0))
-    
-    logger.info(f"Injected {len(mock_products)} additional products. Total quotes: {len(all_quotes)}")
-    
-    return all_quotes
+# Initialize optional modules if available
+try:
+    policy_metadata = PolicyMetadata(policy_intel)
+except NameError:
+    policy_metadata = None
+    logger.warning("PolicyMetadata not available")
 
-# Include v1 router
-app.include_router(v1_router)
->>>>>>> Stashed changes
+try:
+    policy_scorer = PolicyScorer()
+except NameError:
+    policy_scorer = None
+    logger.warning("PolicyScorer not available")
+
+# Try to import claims_analyzer if available
+try:
+    import claims_analyzer
+except ImportError:
+    claims_analyzer = None
+    logger.info("claims_analyzer module not available")
 
 @app.get("/health")
 @app.get("/healthz")
@@ -232,11 +202,13 @@ async def health():
         
         # Check database connections if available
         try:
-            if hasattr(claims_analyzer, 'claims_db') and claims_analyzer.claims_db:
+            if claims_analyzer and hasattr(claims_analyzer, 'claims_db') and claims_analyzer.claims_db:
                 if claims_analyzer.claims_db.is_connected():
                     checks["checks"]["claims_db"] = "ok"
                 else:
                     checks["checks"]["claims_db"] = "degraded"
+            else:
+                checks["checks"]["claims_db"] = "unavailable"
         except:
             checks["checks"]["claims_db"] = "unavailable"
         
@@ -253,18 +225,6 @@ async def health():
         )
 
 @app.post("/api/ask")
-<<<<<<< Updated upstream
-async def ask_question(request: dict):
-    result = await conversation.handle_question(
-        question=request.get("question"),
-        language=request.get("language"),
-        context=request.get("context"),
-        user_id=request.get("user_id", "default_user"),
-        is_voice=request.get("is_voice", False),
-        role=request.get("role")
-    )
-    return result
-=======
 async def ask_question_endpoint(http_request: Request):
     """Handle user questions with comprehensive error handling"""
     start_time = time.time()
@@ -328,7 +288,9 @@ async def ask_question_endpoint(http_request: Request):
             logger.info(f"Cancellation question detected: {question}")
             
             # Get active policy from context
-            active_policy = policy_metadata.get_active_policy(context_data, user_id)
+            active_policy = None
+            if policy_metadata:
+                active_policy = policy_metadata.get_active_policy(context_data, user_id)
             
             if not active_policy:
                 # No active policy - ask user to clarify
@@ -345,7 +307,11 @@ async def ask_question_endpoint(http_request: Request):
                 }
             
             # Format answer based on question type
-            cancellation_answer = policy_metadata.format_cancellation_answer(active_policy, question)
+            cancellation_answer = ""
+            if policy_metadata:
+                cancellation_answer = policy_metadata.format_cancellation_answer(active_policy, question)
+            else:
+                cancellation_answer = "I apologize, but I'm unable to process cancellation requests at the moment. Please contact customer support."
             
             # Only show suggested questions for general cancellation questions
             suggested_questions = []
@@ -413,13 +379,15 @@ async def ask_question_endpoint(http_request: Request):
                     except:
                         pass
                 
-                claims_analysis = await claims_analyzer.analyze_destination_and_recommend(
-                    destination=destination_mentioned,
-                    trip_duration=trip_duration
-                )
+                claims_analysis = None
+                if claims_analyzer:
+                    claims_analysis = await claims_analyzer.analyze_destination_and_recommend(
+                        destination=destination_mentioned,
+                        trip_duration=trip_duration
+                    )
                 
                 # If we have claims data, enhance context with it
-                if claims_analysis.get("has_data"):
+                if claims_analysis and claims_analysis.get("has_data"):
                     top_rec = claims_analysis.get("recommendations", [{}])[0] if claims_analysis.get("recommendations") else {}
                     common_incidents_str = ', '.join([
                         f"{inc['incident']} ({inc['percentage']}%)" 
@@ -592,19 +560,25 @@ CRITICAL INSTRUCTION:
             
             if target_quote and trip_details:
                 # Calculate and explain pricing
-                breakdown = pricing_calculator.calculate_price_breakdown(
-                    price=target_quote.get("price", 0),
-                    destination=trip_details.get("destination", ""),
-                    departure_date=trip_details.get("departure_date", ""),
-                    return_date=trip_details.get("return_date", ""),
-                    travelers=trip_details.get("travelers", 1),
-                    ages=trip_details.get("ages", []),
-                    trip_cost=trip_details.get("trip_cost"),
-                    policy_name=target_quote.get("plan_name"),
-                    source=target_quote.get("source", "ancileo")
-                )
-                
-                explanation = pricing_calculator.explain_price(target_quote, trip_details)
+                try:
+                    from pricing_calculator import PricingCalculator
+                    pricing_calculator = PricingCalculator()
+                    breakdown = pricing_calculator.calculate_price_breakdown(
+                        price=target_quote.get("price", 0),
+                        destination=trip_details.get("destination", ""),
+                        departure_date=trip_details.get("departure_date", ""),
+                        return_date=trip_details.get("return_date", ""),
+                        travelers=trip_details.get("travelers", 1),
+                        ages=trip_details.get("ages", []),
+                        trip_cost=trip_details.get("trip_cost"),
+                        policy_name=target_quote.get("plan_name"),
+                        source=target_quote.get("source", "ancileo")
+                    )
+                    
+                    explanation = pricing_calculator.explain_price(target_quote, trip_details)
+                except (ImportError, AttributeError, NameError):
+                    # Fallback explanation if pricing calculator not available
+                    explanation = f"The price of ${target_quote.get('price', 0):.2f} for {target_quote.get('plan_name', 'this policy')} is based on your trip details including destination, duration, and number of travelers."
                 
                 # Get conversational response but inject pricing explanation
                 result = await conversation.handle_question(
@@ -635,9 +609,15 @@ CRITICAL INSTRUCTION:
             user_profile = None
             email = request.get("email") or context_data.get("email")
             if email:
-                user_identity = user_profile_manager.identify_user(email=email)
-                if user_identity.get("found"):
-                    user_profile = user_identity["user"]
+                try:
+                    from user_profile_manager import UserProfileManager
+                    user_profile_manager = UserProfileManager()
+                    user_identity = user_profile_manager.identify_user(email=email)
+                    if user_identity.get("found"):
+                        user_profile = user_identity["user"]
+                except (ImportError, AttributeError, NameError):
+                    # User profile manager not available - continue without it
+                    pass
             
             # Get risk assessment
             risk_assessment = None
@@ -671,13 +651,18 @@ CRITICAL INSTRUCTION:
                 activities = user_profile["activity_types"]
             
             # Score policies using PolicyScorer (enhanced with activity matching)
-            scored = policy_scorer.score_policies(
-                quotes=quotes,
-                trip_details=trip_details,
-                user_profile=user_profile,
-                risk_assessment=risk_assessment,
-                activities=activities
-            )
+            scored = []
+            if policy_scorer:
+                scored = policy_scorer.score_policies(
+                    quotes=quotes,
+                    trip_details=trip_details,
+                    user_profile=user_profile,
+                    risk_assessment=risk_assessment,
+                    activities=activities
+                )
+            else:
+                # Fallback: return quotes as-is if scorer not available
+                scored = [{"quote": q, "total_score": 0.5, "explanation": "Policy scoring not available"} for q in quotes]
             
             # Build explanation with scoring details
             best_policy = scored[0] if scored else None
@@ -959,13 +944,14 @@ async def analyze_destination_claims(request: dict):
         }
     
     try:
-        analysis = await claims_analyzer.analyze_destination_and_recommend(
-            destination=destination,
-            trip_duration=trip_duration
-        )
+        # Note: claims_analyzer module not found - commented out
+        # analysis = await claims_analyzer.analyze_destination_and_recommend(
+        #     destination=destination,
+        #     trip_duration=trip_duration
+        # )
         return {
-            "success": True,
-            **analysis
+            "success": False,
+            "error": "Claims analyzer module not available"
         }
     except Exception as e:
         logger.error(f"Claims analysis failed: {e}", exc_info=True)
@@ -973,7 +959,6 @@ async def analyze_destination_claims(request: dict):
             "success": False,
             "error": str(e)
         }
->>>>>>> Stashed changes
 
 @app.post("/api/role/set")
 async def set_role(request: dict):
@@ -1365,306 +1350,6 @@ async def get_ancileo_policies(
             "error": str(e),
             "message": "Failed to fetch policies from Ancileo API. Make sure ANCILEO_API_KEY is set in .env"
         }
-
-<<<<<<< Updated upstream
-=======
-@app.post("/api/user/identify")
-async def identify_user(request: dict):
-    """Identify existing user or create session profile"""
-    email = request.get("email")
-    phone = request.get("phone")
-    session_id = request.get("session_id") or request.get("user_id", "default_user")
-    
-    # Try to identify user
-    user_identity = user_profile_manager.identify_user(
-        email=email,
-        phone=phone,
-        session_id=session_id
-    )
-    
-    if user_identity.get("found"):
-        user = user_identity["user"]
-        travel_context = user_profile_manager.get_travel_context(user)
-        
-        return {
-            "success": True,
-            "user_found": True,
-            "user": user,
-            "travel_context": travel_context,
-            "needs_data": user_identity.get("needs_data", []),
-            "identification_method": user_identity.get("identification_method")
-        }
-    else:
-        # Create new session profile
-        profile = user_profile_manager.create_or_update_profile(session_id, {
-            "email": email,
-            "phone": phone,
-            "is_new_user": True
-        })
-        
-        return {
-            "success": True,
-            "user_found": False,
-            "session_profile": profile,
-            "needs_data": user_identity.get("needs_data", [])
-        }
-
-@app.post("/api/mcp/profile")
-async def get_mcp_profile(request: dict):
-    """Get comprehensive user profile from Gmail + Instagram via MCP"""
-    email = request.get("email")
-    instagram_username = request.get("instagram_username")
-    
-    if not email:
-        return {
-            "success": False,
-            "error": "Email is required"
-        }
-    
-    try:
-        profile = await mcp_integrations.get_comprehensive_profile(
-            email=email,
-            instagram_username=instagram_username
-        )
-        
-        # Ensure success is set
-        if "success" not in profile:
-            profile["success"] = True
-        
-        return profile
-    except Exception as e:
-        logger.error(f"MCP profile fetch failed: {e}", exc_info=True)
-        # Return a basic profile even on error so user can continue
-        return {
-            "success": True,
-            "email": email,
-            "name": email.split("@")[0].replace(".", " ").title(),
-            "policy_tier": "free",
-            "profile_complete": True,
-            "source": "fallback",
-            "error": None
-        }
-
-@app.post("/api/user/profile")
-async def update_user_profile(request: dict):
-    """Update user profile (new users or existing users with missing data)"""
-    session_id = request.get("session_id") or request.get("user_id", "default_user")
-    user_data = request.get("user_data", {})
-    
-    # Check if user exists
-    email = user_data.get("email")
-    if email:
-        user_identity = user_profile_manager.identify_user(email=email)
-        if user_identity.get("found"):
-            # Update existing user (in mock, we just return enriched data)
-            user = user_identity["user"]
-            enriched = user_profile_manager.enrich_user_data(user, user_data)
-            return {
-                "success": True,
-                "user": enriched,
-                "is_existing_user": True
-            }
-    
-    # Create/update session profile
-    profile = user_profile_manager.create_or_update_profile(session_id, user_data)
-    
-    return {
-        "success": True,
-        "user": profile,
-        "is_existing_user": False
-    }
-
-@app.post("/api/quote/intelligent")
-async def get_intelligent_quote(request: dict):
-    """Get quotes with intelligent recommendations using Blocks 1, 2, and 5"""
-    # First get quotes
-    quote_result = await generate_quote(request)
-    
-    if not quote_result.get("success"):
-        return quote_result
-    
-    quotes = quote_result.get("quotes", [])
-    
-    # Get user profile
-    email = request.get("email")
-    user_profile = None
-    if email:
-        user_identity = user_profile_manager.identify_user(email=email)
-        if user_identity.get("found"):
-            user_profile = user_identity["user"]
-    
-    # Generate intelligent recommendations
-    recommendations = None
-    try:
-        recommendations = await intelligent_recommender.recommend_policies(
-            trip_details=quote_result.get("trip_details", {}),
-            user_profile=user_profile,
-            available_quotes=quotes,
-            policy_intel=policy_intel,
-            predictive_intel=predictive_intel,
-            claims_db=claims_db
-        )
-    except Exception as e:
-        logger.error(f"Intelligent recommendation failed: {e}", exc_info=True)
-    
-    quote_result["recommendations"] = recommendations
-    quote_result["user_profile_found"] = user_profile is not None
-    
-    return quote_result
-
-@app.post("/api/purchase/seamless")
-async def seamless_purchase(request: dict):
-    """
-    Seamless one-click purchase that adapts to available data
-    Automatically handles existing users, collects missing data, and processes purchase
-    """
-    quote_id = request.get("quote_id")
-    offer_id = request.get("offer_id") or request.get("offerId")
-    product_code = request.get("product_code") or request.get("productCode")
-    email = request.get("email")
-    session_id = request.get("session_id") or request.get("user_id", "default_user")
-    
-    if not offer_id or not quote_id:
-        return {
-            "success": False,
-            "error": "Missing quote_id or offer_id",
-            "needs_data": ["quote_id", "offer_id"]
-        }
-    
-    # Identify or create user profile
-    user_profile = None
-    user_identity = None
-    
-    if email:
-        user_identity = user_profile_manager.identify_user(email=email)
-        if user_identity.get("found"):
-            user_profile = user_identity["user"]
-        else:
-            # Try to create profile from request data
-            user_data = {
-                "email": email,
-                "phone": request.get("phone"),
-                "firstName": request.get("firstName") or request.get("first_name"),
-                "lastName": request.get("lastName") or request.get("last_name"),
-                "dateOfBirth": request.get("dateOfBirth") or request.get("date_of_birth"),
-                "nationality": request.get("nationality", "SG"),
-                "passport": request.get("passport"),
-                "cardId": request.get("cardId") or request.get("card_id")
-            }
-            user_profile = user_profile_manager.create_or_update_profile(session_id, user_data)
-    else:
-        # Get from session
-        user_profile = user_profile_manager.get_user_by_session(session_id)
-    
-    # Get traveler data
-    insureds = request.get("insureds", [])
-    
-    # If no insureds provided, try to construct from user profile
-    if not insureds and user_profile:
-        # Try to get from profile or request
-        if request.get("travelers_data"):
-            insureds = request.get("travelers_data")
-        else:
-            # Construct from profile
-            insureds = [{
-                "id": f"insured_1",
-                "firstName": user_profile.get("firstName") or user_profile.get("first_name", ""),
-                "lastName": user_profile.get("lastName") or user_profile.get("last_name", ""),
-                "dateOfBirth": user_profile.get("dateOfBirth") or user_profile.get("date_of_birth"),
-                "email": user_profile.get("email", ""),
-                "phone": user_profile.get("phone") or user_profile.get("phoneNumber", ""),
-                "nationality": user_profile.get("nationality", "SG"),
-                "passport": user_profile.get("passport", ""),
-                "cardId": user_profile.get("cardId") or user_profile.get("card_id", "")
-            }]
-    
-    # Main contact
-    main_contact = {
-        "insuredId": user_profile.get("user_id") if user_profile else None,
-        "title": request.get("title", "Mr"),
-        "firstName": user_profile.get("firstName") or user_profile.get("first_name") or insureds[0].get("firstName", "") if insureds else "",
-        "lastName": user_profile.get("lastName") or user_profile.get("last_name") or insureds[0].get("lastName", "") if insureds else "",
-        "email": email or (user_profile.get("email") if user_profile else "") or (insureds[0].get("email", "") if insureds else ""),
-        "phoneNumber": user_profile.get("phone") or user_profile.get("phoneNumber") or (insureds[0].get("phone", "") if insureds else "")
-    }
-    
-    # Check what data is missing
-    missing_data = []
-    if not main_contact.get("email"):
-        missing_data.append("email")
-    if not main_contact.get("phoneNumber"):
-        missing_data.append("phone")
-    if not insureds or len(insureds) == 0:
-        missing_data.append("travelers")
-    
-    # If critical data missing, return needs_data response
-    if missing_data:
-        return {
-            "success": False,
-            "error": "Missing required data for purchase",
-            "needs_data": missing_data,
-            "collected_data": {
-                "user_found": user_profile is not None,
-                "has_insureds": len(insureds) > 0,
-                "has_main_contact": bool(main_contact.get("email"))
-            },
-            "message": f"Please provide: {', '.join(missing_data)}"
-        }
-    
-    # Get quote details for pricing
-    quote_data = request.get("quote_data", {})
-    unit_price = request.get("unit_price") or quote_data.get("price", 0)
-    currency = request.get("currency") or quote_data.get("currency", "SGD")
-    
-    # Process purchase through Ancileo
-    try:
-        from ancileo_api import AncileoAPI
-        ancileo = AncileoAPI()
-        
-        purchase_result = await ancileo.purchase_policy(
-            quote_id=quote_id,
-            offer_id=offer_id,
-            product_code=product_code,
-            product_type="travel-insurance",
-            unit_price=unit_price,
-            currency=currency,
-            quantity=1,
-            total_price=unit_price,
-            insureds=insureds,
-            main_contact=main_contact,
-            emergency_contact=request.get("emergency_contact"),
-            payment=request.get("payment"),
-            partner_reference=request.get("partner_reference"),
-            options=request.get("options"),
-            market=request.get("market", "SG"),
-            language_code=request.get("language_code", "en")
-        )
-        
-        # If purchase successful, update user profile
-        if purchase_result.get("success") and user_profile:
-            # Record purchase in travel history
-            if not user_profile.get("travel_history"):
-                user_profile["travel_history"] = []
-            
-            user_profile["travel_history"].append({
-                "destination": quote_data.get("destination", "Unknown"),
-                "date": datetime.now().isoformat(),
-                "policy": quote_data.get("plan_name", "Unknown"),
-                "policy_number": purchase_result.get("policy_number"),
-                "claim_filed": False
-            })
-        
-        return purchase_result
-    
-    except Exception as e:
-        logger.error(f"Seamless purchase failed: {e}", exc_info=True)
-        return {
-            "success": False,
-            "error": str(e),
-            "message": "Purchase processing failed. Please try again."
-        }
-
->>>>>>> Stashed changes
 @app.post("/api/ancileo/purchase")
 async def purchase_ancileo_policy(request: dict):
     """Purchase policy through Ancileo API (after payment)"""
