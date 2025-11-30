@@ -364,41 +364,41 @@ CRITICAL INSTRUCTION:
         if is_pricing_question and context_data.get("quotes"):
             quotes = context_data.get("quotes", [])
             trip_details = context_data.get("trip_details", {})
-        
-        # Find the quote being asked about (usually the first/most recent)
-        target_quote = quotes[0] if quotes else None
-        
-        if target_quote and trip_details:
-            # Calculate and explain pricing
-            breakdown = pricing_calculator.calculate_price_breakdown(
-                price=target_quote.get("price", 0),
-                destination=trip_details.get("destination", ""),
-                departure_date=trip_details.get("departure_date", ""),
-                return_date=trip_details.get("return_date", ""),
-                travelers=trip_details.get("travelers", 1),
-                ages=trip_details.get("ages", []),
-                trip_cost=trip_details.get("trip_cost"),
-                policy_name=target_quote.get("plan_name"),
-                source=target_quote.get("source", "ancileo")
-            )
             
-            explanation = pricing_calculator.explain_price(target_quote, trip_details)
+            # Find the quote being asked about (usually the first/most recent)
+            target_quote = quotes[0] if quotes else None
             
-            # Get conversational response but inject pricing explanation
-            result = await conversation.handle_question(
-                question=request.get("question"),
-                language=request.get("language"),
-                context=f"{enhanced_context if enhanced_context else request.get('context', '')}\n\nPRICING BREAKDOWN DATA:\n{explanation}\n\nUse this specific pricing breakdown to answer the user's question about pricing calculation. Be specific and explain the numbers.",
-                user_id=user_id,
-                is_voice=request.get("is_voice", False),
-                role=request.get("role")
-            )
-            
-            # Ensure pricing explanation is included
-            if result.get("answer"):
-                result["answer"] = f"{explanation}\n\n{result['answer']}"
-            
-            return result
+            if target_quote and trip_details:
+                # Calculate and explain pricing
+                breakdown = pricing_calculator.calculate_price_breakdown(
+                    price=target_quote.get("price", 0),
+                    destination=trip_details.get("destination", ""),
+                    departure_date=trip_details.get("departure_date", ""),
+                    return_date=trip_details.get("return_date", ""),
+                    travelers=trip_details.get("travelers", 1),
+                    ages=trip_details.get("ages", []),
+                    trip_cost=trip_details.get("trip_cost"),
+                    policy_name=target_quote.get("plan_name"),
+                    source=target_quote.get("source", "ancileo")
+                )
+                
+                explanation = pricing_calculator.explain_price(target_quote, trip_details)
+                
+                # Get conversational response but inject pricing explanation
+                result = await conversation.handle_question(
+                    question=request.get("question"),
+                    language=request.get("language"),
+                    context=f"{enhanced_context if enhanced_context else request.get('context', '')}\n\nPRICING BREAKDOWN DATA:\n{explanation}\n\nUse this specific pricing breakdown to answer the user's question about pricing calculation. Be specific and explain the numbers.",
+                    user_id=user_id,
+                    is_voice=request.get("is_voice", False),
+                    role=request.get("role")
+                )
+                
+                # Ensure pricing explanation is included
+                if result.get("answer"):
+                    result["answer"] = f"{explanation}\n\n{result['answer']}"
+                
+                return result
         
         # If best policy question and we have quotes, use scoring algorithm
         if is_best_question and context_data.get("quotes"):
@@ -635,13 +635,18 @@ The AI will use the user's purchased insurance information (if available) to pro
             except Exception as e:
                 logger.error(f"Failed to add policy details context: {e}")
         
-        # Extract user data from request (onboarding details, purchased insurance)
-        user_data = request.get("user_data", {})  # From frontend localStorage
-        purchased_insurance = request.get("purchased_insurance", {})  # Insurance purchased by user
+        # ALWAYS extract user data from request (onboarding details, purchased insurance)
+        # These come from frontend localStorage - MUST be retrieved for every request
+        user_data = request.get("user_data") or {}  # From frontend localStorage
+        purchased_insurance = request.get("purchased_insurance") or {}  # Insurance purchased by user
         
-        # Build user context for AI personalization
+        # Log user data availability for debugging (CRITICAL for troubleshooting)
+        logger.info(f"📋 [CONTEXT] User data from localStorage: name={bool(user_data.get('name'))}, email={bool(user_data.get('email'))}, interests={bool(user_data.get('interests'))}, hasData={bool(user_data)}")
+        logger.info(f"🛡️ [CONTEXT] Purchased insurance from localStorage: policy={purchased_insurance.get('plan_name', 'N/A')}, policy_number={purchased_insurance.get('policy_number', 'N/A')}, hasData={bool(purchased_insurance)}")
+        
+        # Build user context for AI personalization - ALWAYS build this even if data is empty
         user_context = ""
-        if user_data:
+        if user_data and isinstance(user_data, dict) and len(user_data) > 0:
             user_context += "\n\n👤 USER PROFILE & ONBOARDING DATA:\n"
             if user_data.get("name"):
                 user_context += f"- Name: {user_data.get('name')}\n"
@@ -661,7 +666,7 @@ The AI will use the user's purchased insurance information (if available) to pro
             if user_data.get("nric_number"):
                 user_context += f"- NRIC: {user_data.get('nric_number')}\n"
         
-        if purchased_insurance:
+        if purchased_insurance and isinstance(purchased_insurance, dict) and len(purchased_insurance) > 0:
             user_context += "\n\n🛡️ PURCHASED INSURANCE:\n"
             if purchased_insurance.get("plan_name"):
                 user_context += f"- Policy: **{purchased_insurance.get('plan_name')}**\n"
@@ -675,6 +680,16 @@ The AI will use the user's purchased insurance information (if available) to pro
                     user_context += f"- Trip Destination: {trip.get('destination')}\n"
                 if trip.get("departure_date"):
                     user_context += f"- Departure: {trip.get('departure_date')}\n"
+                if trip.get("return_date"):
+                    user_context += f"- Return: {trip.get('return_date')}\n"
+            if purchased_insurance.get("insureds"):
+                insured_names = []
+                for insured in purchased_insurance.get("insureds", []):
+                    name = insured.get("name") or f"{insured.get('firstName', '')} {insured.get('lastName', '')}".strip()
+                    if name:
+                        insured_names.append(name)
+                if insured_names:
+                    user_context += f"- Insured Travelers: {', '.join(insured_names)}\n"
         
         # Combine all context
         final_context = enhanced_context if enhanced_context else request.get("context", "")
@@ -682,44 +697,167 @@ The AI will use the user's purchased insurance information (if available) to pro
             final_context = final_context + user_context
         
         # Normal conversation flow (with enhanced context including user data)
-        result = await conversation.handle_question(
-            question=request.get("question"),
-            language=request.get("language"),
-            context=final_context,
-            user_id=user_id,
-            is_voice=request.get("is_voice", False),
-            role=request.get("role")
-        )
-        
-        # Add claims analysis if available - CRITICAL for frontend
-        if claims_analysis:
-            if not result:
-                result = {}
-            result["claims_analysis"] = claims_analysis
-            logger.info(f"✅ Added claims_analysis to response: has_data={claims_analysis.get('has_data')}, total_claims={claims_analysis.get('total_claims', 0)}")
-        
-        # Also add it to answer/content so LLM response includes it
-        if claims_analysis and claims_analysis.get("has_data"):
-            claims_summary = f"\n\n🎯 **Claims Insights for {destination_mentioned}**: "
-            if claims_analysis.get("recommendations"):
-                top = claims_analysis["recommendations"][0]
-                claims_summary += f"{top.get('incidence_rate', 'N/A')} of travelers have claimed for {top.get('claim_type', 'incidents')} (avg cost: ${top.get('average_cost', 0):,.2f} SGD)"
-            if result.get("answer"):
-                result["answer"] = claims_summary + "\n\n" + result["answer"]
-            if result.get("content"):
-                result["content"] = claims_summary + "\n\n" + result["content"]
-            if result.get("message"):
-                result["message"] = claims_summary + "\n\n" + result["message"]
-        
-        return result
+        # Wrap in try-except to ensure we always get a response
+        try:
+            result = await conversation.handle_question(
+                question=request.get("question"),
+                language=request.get("language"),
+                context=final_context,
+                user_id=user_id,
+                is_voice=request.get("is_voice", False),
+                role=request.get("role")
+            )
+            
+            # Ensure result is a valid dict
+            if not result or not isinstance(result, dict):
+                logger.warning(f"Conversation handler returned invalid result: {result}")
+                result = {"answer": "", "content": "", "message": ""}
+            
+            # Ensure at least one answer field is populated
+            if not result.get("answer") and not result.get("content") and not result.get("message"):
+                logger.warning("Conversation handler returned empty response, generating fallback")
+                question_text = request.get("question", "your question")
+                # Generate a simple fallback response
+                result = {
+                    "answer": f"I'm here to help with your question: {question_text}. Let me provide you with a helpful response.",
+                    "content": f"I'm here to help with your question: {question_text}. Let me provide you with a helpful response.",
+                    "message": f"I'm here to help with your question: {question_text}. Let me provide you with a helpful response."
+                }
+            
+            # Add claims analysis if available - CRITICAL for frontend
+            if claims_analysis:
+                if not result:
+                    result = {}
+                result["claims_analysis"] = claims_analysis
+                logger.info(f"✅ Added claims_analysis to response: has_data={claims_analysis.get('has_data')}, total_claims={claims_analysis.get('total_claims', 0)}")
+            
+            # Also add it to answer/content so LLM response includes it
+            if claims_analysis and claims_analysis.get("has_data"):
+                claims_summary = f"\n\n🎯 **Claims Insights for {destination_mentioned}**: "
+                if claims_analysis.get("recommendations"):
+                    top = claims_analysis["recommendations"][0]
+                    claims_summary += f"{top.get('incidence_rate', 'N/A')} of travelers have claimed for {top.get('claim_type', 'incidents')} (avg cost: ${top.get('average_cost', 0):,.2f} SGD)"
+                if result.get("answer"):
+                    result["answer"] = claims_summary + "\n\n" + result["answer"]
+                if result.get("content"):
+                    result["content"] = claims_summary + "\n\n" + result["content"]
+                if result.get("message"):
+                    result["message"] = claims_summary + "\n\n" + result["message"]
+            
+            return result
+            
+        except Exception as conv_error:
+            logger.error(f"Error in conversation.handle_question: {conv_error}", exc_info=True)
+            # Try to get a basic response even on error
+            try:
+                # Attempt a simplified call without complex context
+                simple_result = await conversation.handle_question(
+                    question=request.get("question"),
+                    language=request.get("language"),
+                    context=user_context if user_context else "User question about travel insurance.",
+                    user_id=user_id,
+                    is_voice=request.get("is_voice", False),
+                    role=request.get("role")
+                )
+                if simple_result and (simple_result.get("answer") or simple_result.get("content")):
+                    logger.info("✅ Got fallback response from simplified conversation handler")
+                    return simple_result
+            except Exception as fallback_error:
+                logger.error(f"Fallback conversation handler also failed: {fallback_error}")
+            
+            # If both attempts failed, re-raise to be caught by outer handler
+            raise conv_error
     
     except Exception as e:
         logger.error(f"Error in /api/ask endpoint: {e}", exc_info=True)
         import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
+        error_trace = traceback.format_exc()
+        logger.error(f"Traceback: {error_trace}")
         
-        # Provide helpful error response
-        error_message = f"😅 **I'm having a bit of trouble right now**\n\nI encountered an issue, but I'm here to help! Here's what you can try:\n\n• **Try rephrasing** your question - sometimes simpler wording works better\n• **Wait a moment** and try again - this might be temporary\n• **Ask something simple** like \"What can you help me with?\" or \"Tell me about travel insurance\"\n\nI apologize for the inconvenience. Your question is important to me!"
+        # Try one more time with minimal context to get ANY answer
+        question = request.get("question", "")
+        if question:
+            try:
+                logger.info("Attempting emergency fallback response generation...")
+                # Build basic context from user data if available
+                user_data = request.get("user_data", {})
+                purchased_insurance = request.get("purchased_insurance", {})
+                
+                emergency_context = f"User asked: {question}."
+                
+                # Add user context if available
+                if user_data:
+                    emergency_context += f"\n\nUser Profile:\n- Name: {user_data.get('name', 'User')}\n"
+                    if user_data.get('interests'):
+                        emergency_context += f"- Interests: {', '.join(user_data.get('interests', []))}\n"
+                
+                if purchased_insurance:
+                    emergency_context += f"\n\nPurchased Insurance:\n- Policy: {purchased_insurance.get('plan_name', 'N/A')}\n"
+                    emergency_context += f"- Policy Number: {purchased_insurance.get('policy_number', 'N/A')}\n"
+                    if purchased_insurance.get('trip_details'):
+                        trip = purchased_insurance.get('trip_details', {})
+                        if trip.get('destination'):
+                            emergency_context += f"- Destination: {trip.get('destination')}\n"
+                
+                emergency_context += "\n\nProvide a helpful, personalized answer based on the question and available user information."
+                
+                minimal_result = await conversation.handle_question(
+                    question=question,
+                    language=request.get("language", "en"),
+                    context=emergency_context,
+                    user_id=request.get("user_id", "default_user"),
+                    is_voice=False,
+                    role=None
+                )
+                if minimal_result and (minimal_result.get("answer") or minimal_result.get("content") or minimal_result.get("message")):
+                    logger.info("✅ Emergency fallback succeeded!")
+                    # Ensure all required fields are present
+                    if not minimal_result.get("booking_links"):
+                        minimal_result["booking_links"] = []
+                    if not minimal_result.get("suggested_questions"):
+                        minimal_result["suggested_questions"] = []
+                    if not minimal_result.get("quotes"):
+                        minimal_result["quotes"] = []
+                    return minimal_result
+            except Exception as emergency_error:
+                logger.error(f"Emergency fallback also failed: {emergency_error}", exc_info=True)
+                import traceback
+                logger.error(f"Emergency fallback traceback: {traceback.format_exc()}")
+                # Even if emergency fallback fails, try to provide a basic answer based on question
+                try:
+                    # Generate a simple direct answer based on question type
+                    question_lower = question.lower()
+                    basic_answer = ""
+                    
+                    if "cancel" in question_lower or "cancellation" in question_lower:
+                        purchased_insurance = request.get("purchased_insurance", {})
+                        policy_name = purchased_insurance.get("plan_name", "your policy")
+                        basic_answer = f"To cancel {policy_name}, you can contact the insurance provider directly. "
+                        basic_answer += "Most travel insurance policies have a 14-day cooling-off period where you can get a full refund. "
+                        basic_answer += "After that period, cancellation terms vary by policy. "
+                        if purchased_insurance.get("policy_number"):
+                            basic_answer += f"Your policy number is {purchased_insurance.get('policy_number')}. "
+                        basic_answer += "Would you like specific contact information for your policy?"
+                    else:
+                        basic_answer = f"I'm here to help with your question: \"{question}\". "
+                        basic_answer += "Please try asking again or rephrasing your question, and I'll do my best to assist you."
+                    
+                    logger.info("✅ Generated basic fallback answer")
+                    return {
+                        "answer": basic_answer,
+                        "content": basic_answer,
+                        "message": basic_answer,
+                        "booking_links": [],
+                        "suggested_questions": [],
+                        "quotes": [],
+                        "quote_id": None,
+                        "trip_details": None
+                    }
+                except Exception as final_error:
+                    logger.error(f"Even basic fallback failed: {final_error}")
+        
+        # Only show generic error as absolute last resort
+        error_message = f"I apologize, but I encountered an issue processing your question. Let me try to help: {question}. Please feel free to ask your question again, and I'll do my best to provide you with a helpful answer."
         
         return {
             "answer": error_message,

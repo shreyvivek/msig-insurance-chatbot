@@ -2625,13 +2625,48 @@ export default function Home() {
         contextData.trip_details = latestTripDetails
       }
       
-      // Get user onboarding data from localStorage
-      const savedUserData = localStorage.getItem('wandersure_user_data')
-      const onboardingData = savedUserData ? JSON.parse(savedUserData) : null
+      // ALWAYS get user onboarding data from localStorage for every request
+      let onboardingData = null
+      try {
+        const savedUserData = localStorage.getItem('wandersure_user_data')
+        if (savedUserData) {
+          onboardingData = JSON.parse(savedUserData)
+          console.log('✅ Retrieved user onboarding data from localStorage:', {
+            hasName: !!onboardingData?.name,
+            hasEmail: !!onboardingData?.email,
+            hasInterests: !!onboardingData?.interests,
+            interests: onboardingData?.interests
+          })
+        } else {
+          console.log('⚠️ No user onboarding data found in localStorage')
+        }
+      } catch (e) {
+        console.error('❌ Error reading user data from localStorage:', e)
+      }
       
-      // Get purchased insurance info from localStorage
-      const savedPurchasedInsurance = localStorage.getItem('wandersure_purchased_insurance')
-      const purchasedInsurance = savedPurchasedInsurance ? JSON.parse(savedPurchasedInsurance) : null
+      // ALWAYS get purchased insurance info from localStorage for every request
+      let purchasedInsurance = null
+      try {
+        const savedPurchasedInsurance = localStorage.getItem('wandersure_purchased_insurance')
+        if (savedPurchasedInsurance) {
+          purchasedInsurance = JSON.parse(savedPurchasedInsurance)
+          console.log('✅ Retrieved purchased insurance from localStorage:', {
+            policyName: purchasedInsurance?.plan_name,
+            policyNumber: purchasedInsurance?.policy_number,
+            hasTripDetails: !!purchasedInsurance?.trip_details
+          })
+        } else {
+          console.log('⚠️ No purchased insurance found in localStorage')
+        }
+      } catch (e) {
+        console.error('❌ Error reading purchased insurance from localStorage:', e)
+      }
+      
+      // Ensure context_data includes trip_details if we have purchased insurance
+      if (purchasedInsurance?.trip_details && !contextData.trip_details) {
+        contextData.trip_details = purchasedInsurance.trip_details
+        console.log('✅ Added trip_details from purchased insurance to context')
+      }
       
       const response = await fetch(`${API_URL}/api/ask`, {
         method: 'POST',
@@ -2639,7 +2674,7 @@ export default function Home() {
         body: JSON.stringify({
           question: currentInput,
           language: language,
-          user_id: userData?.user_id || 'default_user',
+          user_id: userData?.user_id || onboardingData?.email || 'default_user',
           is_voice: false,
           context_data: contextData,
           user_data: onboardingData,  // User onboarding data (name, email, phone, DOB, interests, medical conditions, etc.)

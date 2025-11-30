@@ -292,7 +292,7 @@ CRITICAL INSTRUCTIONS FOR PERSONALIZED, EMPATHETIC RESPONSES:
 4. **Use their context** - Reference their destination, activities, profile, purchased insurance when relevant
 5. **Be empathetic** - Understand their concerns (cost, coverage, safety) and address them naturally
 6. **Answer THIS specific insurance question**: "{question}" with personalized details based on THEIR profile and purchased insurance
-7. **Reference their purchased policy** - If they have PURCHASED INSURANCE, reference it specifically. For example: "Based on your {policy_name} policy..." or "Since you purchased {policy_name}..."
+7. **Reference their purchased policy** - If they have PURCHASED INSURANCE, reference it specifically. For example: "Based on your {{policy_name}} policy..." or "Since you purchased {{policy_name}}..."
 8. **Reference specific policy details** - Use exact coverage amounts, not vague statements
 9. **Format policy names in bold**: **INTERNATIONAL TRAVEL**, **MHInsure Travel**, **Scootsurance**
 10. **Include citations**: **[Policy: Name, Section]** when referencing policy details
@@ -315,7 +315,7 @@ PERSONALIZATION EXAMPLES:
 - If user has PURCHASED INSURANCE: "Since you purchased [policy_name] on [date] for your trip to [destination], here's how cancellation works for your policy..."
 - If user has medical conditions: "Given your [medical conditions], it's important to note that..."
 - If user has specific interests: "Since you enjoy [interests], you'll want to know that..."
-- Always use their name if provided: "Hi [name], based on your [policy_name] policy..."
+- Always use their name if provided: "Hi {{name}}, based on your {{policy_name}} policy..."
 
 PREMIUM EXPLANATIONS - When answering pricing/cost questions:
 - INTERNATIONAL TRAVEL: Comprehensive international travel coverage
