@@ -325,44 +325,282 @@ function PolicyCard({ policyName, onClick, isAncileo, source }: {
   )
 }
 
+// Policy Details Display Component with Animations
+function PolicyDetailsDisplay({ details }: { details: string }) {
+  // Parse the markdown/details text into structured sections
+  const parsePolicyDetails = (text: string) => {
+    const sections: {
+      policyName?: string
+      coverageHighlights?: string[]
+      keyExclusions?: string[]
+      bestFor?: string
+    } = {}
+    
+    // Extract policy name - handle both markdown and plain text
+    const policyMatch = text.match(/\*\*Policy\*\*:\s*([^\n]+)/i) || 
+                        text.match(/Policy:\s*([^\n]+)/i)
+    if (policyMatch) {
+      sections.policyName = policyMatch[1].trim()
+    }
+    
+    // Extract Coverage Highlights - handle both markdown and plain text
+    const coverageMatch = text.match(/(?:\*\*)?Coverage Highlights(?:\*\*)?:?\s*([\s\S]*?)(?=(?:\*\*)?Key Exclusions(?:\*\*)?:|$)/i)
+    if (coverageMatch) {
+      const coverageText = coverageMatch[1].trim()
+      // Split by bullet points only - not hyphens in content (like "12-69 years")
+      // Match bullet point characters that are actual list markers
+      sections.coverageHighlights = coverageText
+        .split(/\s*[•\u2022\u2023\u25E6\u2043]\s*/)
+        .map(item => item.trim())
+        .filter(item => item.length > 0 && !item.match(/^\s*$/) && !item.match(/^Coverage Highlights/i))
+      
+      // If no bullet points found, try splitting on markdown asterisks (but be careful with hyphens)
+      if (sections.coverageHighlights.length === 0 || (sections.coverageHighlights.length === 1 && !coverageText.includes('•'))) {
+        sections.coverageHighlights = coverageText
+          .split(/\s*\*\s*(?=\w)/) // Only split on * followed by word character (not hyphens)
+          .map(item => item.trim().replace(/^\*\s*/, ''))
+          .filter(item => item.length > 0 && !item.match(/^\s*$/) && !item.match(/^Coverage Highlights/i))
+      }
+    }
+    
+    // Extract Key Exclusions - handle both markdown and plain text
+    const exclusionsMatch = text.match(/(?:\*\*)?Key Exclusions(?:\*\*)?:?\s*([\s\S]*?)(?=(?:\*\*)?Best For(?:\*\*)?:|$)/i)
+    if (exclusionsMatch) {
+      const exclusionsText = exclusionsMatch[1].trim()
+      // Split by bullet points only - not hyphens in content
+      sections.keyExclusions = exclusionsText
+        .split(/\s*[•\u2022\u2023\u25E6\u2043]\s*/)
+        .map(item => item.trim())
+        .filter(item => item.length > 0 && !item.match(/^\s*$/) && !item.match(/^Key Exclusions/i))
+      
+      // If no bullet points found, try splitting on markdown asterisks
+      if (sections.keyExclusions.length === 0 || (sections.keyExclusions.length === 1 && !exclusionsText.includes('•'))) {
+        sections.keyExclusions = exclusionsText
+          .split(/\s*\*\s*(?=\w)/) // Only split on * followed by word character (not hyphens)
+          .map(item => item.trim().replace(/^\*\s*/, ''))
+          .filter(item => item.length > 0 && !item.match(/^\s*$/) && !item.match(/^Key Exclusions/i))
+      }
+    }
+    
+    // Extract Best For - handle both markdown and plain text
+    const bestForMatch = text.match(/(?:\*\*)?Best For(?:\*\*)?:?\s*([\s\S]+?)(?=\n\n|\n\*\*|━━|$)/i)
+    if (bestForMatch) {
+      sections.bestFor = bestForMatch[1]
+        .trim()
+        .replace(/\n+/g, ' ')
+        .replace(/\s+/g, ' ')
+    }
+    
+    return sections
+  }
+  
+  const parsed = parsePolicyDetails(details)
+  
+  return (
+    <div className="space-y-6 animate-fade-in">
+      {/* Policy Name */}
+      {parsed.policyName && (
+        <div className="animate-slide-down" style={{ animationDelay: '0ms' }}>
+          <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-2">
+            {parsed.policyName}
+          </h3>
+        </div>
+      )}
+      
+      {/* Coverage Highlights */}
+      {parsed.coverageHighlights && parsed.coverageHighlights.length > 0 && (
+        <div className="animate-slide-down" style={{ animationDelay: '100ms' }}>
+          <div className="bg-gradient-to-r from-green-900/30 via-emerald-900/30 to-teal-900/30 rounded-xl p-5 border border-green-500/30 hover:border-green-400/50 transition-all duration-300 hover:shadow-lg hover:shadow-green-500/20">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-1 h-6 bg-gradient-to-b from-green-400 to-emerald-400 rounded-full animate-pulse"></div>
+              <h4 className="text-lg font-bold text-green-300 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 animate-pulse" />
+                Coverage Highlights
+              </h4>
+            </div>
+            <ul className="space-y-3">
+              {parsed.coverageHighlights.map((item, idx) => (
+                <li
+                  key={idx}
+                  className="flex items-start gap-3 text-gray-200 animate-slide-right hover:bg-green-900/20 rounded-lg p-2 -ml-2 transition-all duration-200"
+                  style={{ animationDelay: `${200 + idx * 50}ms` }}
+                >
+                  <span className="text-green-400 mt-1.5 flex-shrink-0 text-xl font-bold animate-pulse">•</span>
+                  <span className="leading-relaxed flex-1">
+                    {item.includes(':') ? (
+                      <>
+                        <span className="font-semibold text-green-300">
+                          {item.split(':')[0]}:
+                        </span>
+                        <span className="text-gray-200">
+                          {item.split(':').slice(1).join(':')}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-gray-200">{item}</span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+      
+      {/* Key Exclusions */}
+      {parsed.keyExclusions && parsed.keyExclusions.length > 0 && (
+        <div className="animate-slide-down" style={{ animationDelay: '300ms' }}>
+          <div className="bg-gradient-to-r from-amber-900/30 via-orange-900/30 to-red-900/30 rounded-xl p-5 border border-amber-500/30 hover:border-amber-400/50 transition-all duration-300 hover:shadow-lg hover:shadow-amber-500/20">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-1 h-6 bg-gradient-to-b from-amber-400 to-orange-400 rounded-full"></div>
+              <h4 className="text-lg font-bold text-amber-300 flex items-center gap-2">
+                <X className="w-4 h-4" />
+                Key Exclusions
+              </h4>
+            </div>
+            <ul className="space-y-3">
+              {parsed.keyExclusions.map((item, idx) => (
+                <li
+                  key={idx}
+                  className="flex items-start gap-3 text-gray-200 animate-slide-right hover:bg-amber-900/20 rounded-lg p-2 -ml-2 transition-all duration-200"
+                  style={{ animationDelay: `${400 + idx * 50}ms` }}
+                >
+                  <span className="text-amber-400 mt-1 flex-shrink-0 text-xl font-bold">•</span>
+                  <span className="leading-relaxed flex-1">{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+      
+      {/* Best For */}
+      {parsed.bestFor && (
+        <div className="animate-slide-down" style={{ animationDelay: '500ms' }}>
+          <div className="bg-gradient-to-r from-blue-900/30 via-purple-900/30 to-pink-900/30 rounded-xl p-5 border border-purple-500/30 hover:border-purple-400/50 transition-all duration-300 hover:shadow-lg hover:shadow-purple-500/20">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-1 h-6 bg-gradient-to-b from-blue-400 to-purple-400 rounded-full animate-pulse"></div>
+              <h4 className="text-lg font-bold text-blue-300 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 animate-pulse" />
+                Best For
+              </h4>
+            </div>
+            <p className="text-gray-200 leading-relaxed pl-4 border-l-2 border-purple-500/50 hover:border-purple-400 transition-colors duration-300">
+              {parsed.bestFor}
+            </p>
+          </div>
+        </div>
+      )}
+      
+      {/* Fallback: If parsing failed, show raw markdown */}
+      {!parsed.policyName && !parsed.coverageHighlights && (
+        <div className="prose prose-invert max-w-none animate-fade-in">
+          <ReactMarkdown
+            components={{
+              p: ({ children }) => <p className="text-gray-200 mb-3 leading-relaxed">{children}</p>,
+              strong: ({ children }) => <strong className="text-blue-300 font-semibold">{children}</strong>,
+              ul: ({ children }) => <ul className="list-disc list-inside space-y-2 mb-4 text-gray-200">{children}</ul>,
+              li: ({ children }) => <li className="text-gray-300">{children}</li>,
+            }}
+          >
+            {details}
+          </ReactMarkdown>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Policy Modal Component
-function PolicyModal({ policyName, isOpen, onClose, productCode, offerId, quoteId }: { 
+// Helper function to extract local policy name from Ancileo policy names
+function extractLocalPolicyName(policyName: string, localPolicyName?: string): string {
+  // Use local_policy_name if provided (from backend mapping)
+  if (localPolicyName) {
+    return cleanPolicyName(localPolicyName)
+  }
+  
+  // Extract from Ancileo policy name patterns
+  const name = cleanPolicyName(policyName)
+  
+  // Mapping for common Ancileo policy name formats
+  if (name.includes('Scootsurance')) {
+    return 'Scootsurance'
+  }
+  if (name.includes('MHInsure')) {
+    return 'MHInsure Travel'
+  }
+  if (name.includes('INTERNATIONAL TRAVEL') || name.includes('International Travel')) {
+    return 'INTERNATIONAL TRAVEL'
+  }
+  
+  // Try to extract base name before " - Travel Insurance" or similar suffixes
+  const baseMatch = name.match(/^([^-]+)/)
+  if (baseMatch) {
+    return baseMatch[1].trim()
+  }
+  
+  return name
+}
+
+function PolicyModal({ policyName, isOpen, onClose, productCode, offerId, quoteId, localPolicyName }: { 
   policyName: string
   isOpen: boolean
   onClose: () => void
   productCode?: string
   offerId?: string
   quoteId?: string
+  localPolicyName?: string
 }) {
   const [details, setDetails] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [isAncileo, setIsAncileo] = useState(false)
-  const cleanedName = cleanPolicyName(policyName)
+  
+  // Extract local policy name (e.g., "Scootsurance" from "Scootsurance - Travel Insurance")
+  const localName = extractLocalPolicyName(policyName, localPolicyName)
+  const displayName = cleanPolicyName(policyName)
   
   useEffect(() => {
-    if (isOpen && !details) {
+    if (isOpen) {
+      // Always reload details when modal opens
+      setDetails(null)
       setIsLoading(true)
       
-      // Try Ancileo API - Note: According to Ancileo docs, getPolicy requires policyId (from purchase) and email
-      // For now, if we have offer_id but not policy_id, we'll use local policy details
-      // The policy wordings can only be fetched after purchase
+      // Always use local policy details (for Ancileo quotes, we map to local name)
+      // Both are the same policy, local details are more comprehensive
       setIsAncileo(false)
       
-      // For purchased policies, we could fetch wordings, but we need policy_id and email
-      // This would need to be called after purchase with the purchasedOfferId
-      // For now, fallback to local policy details
-      fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002'}/api/policy/details?policy_name=${encodeURIComponent(cleanedName)}`)
-        .then(res => res.json())
+      // Fetch local policy details using the extracted local policy name
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002'
+      console.log(`📋 Fetching policy details for: "${localName}" (from policy: "${displayName}")`)
+      
+      fetch(`${apiUrl}/api/policy/details?policy_name=${encodeURIComponent(localName)}`)
+        .then(res => {
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`)
+          }
+          return res.json()
+        })
         .then(data => {
-          if (data.success) {
+          console.log('📋 Policy details response:', data)
+          if (data.success && data.summary) {
             setDetails(data.summary)
             setIsAncileo(false)
+          } else {
+            console.error('Failed to load policy details:', data)
+            setDetails(`**Policy**: ${localName}\n\nUnable to load detailed coverage information at this time.`)
           }
           setIsLoading(false)
         })
-        .catch(() => setIsLoading(false))
+        .catch((error) => {
+          console.error('Error loading policy details:', error)
+          setIsLoading(false)
+          setDetails(`**Policy**: ${localName}\n\nError loading policy details. Please try again later.`)
+        })
+    } else {
+      // Reset when modal closes
+      setDetails(null)
     }
-  }, [isOpen, cleanedName, details, productCode, offerId, quoteId])
+  }, [isOpen, localName, displayName])
   
   if (!isOpen) return null
   
@@ -374,18 +612,11 @@ function PolicyModal({ policyName, isOpen, onClose, productCode, offerId, quoteI
       >
         <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-4 flex items-center justify-between border-b border-gray-700">
           <div className="flex items-center gap-3">
-            <h2 className="text-xl font-bold text-white">{cleanedName}</h2>
-            {isAncileo && (
-              <span className="px-2 py-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-semibold rounded-full flex items-center gap-1">
-                <Sparkles className="w-3 h-3" />
-                Ancileo API
-              </span>
-            )}
-            {!isAncileo && (
-              <span className="px-2 py-1 bg-gradient-to-r from-blue-600 to-cyan-600 text-white text-xs font-semibold rounded-full">
-                Local
-              </span>
-            )}
+            <h2 className="text-xl font-bold text-white">{displayName}</h2>
+            {/* Always show Local badge since we're using local policy details */}
+            <span className="px-2 py-1 bg-gradient-to-r from-blue-600 to-cyan-600 text-white text-xs font-semibold rounded-full">
+              Local
+            </span>
           </div>
           <button
             onClick={onClose}
@@ -401,18 +632,7 @@ function PolicyModal({ policyName, isOpen, onClose, productCode, offerId, quoteI
               <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
             </div>
           ) : details ? (
-            <div className="prose prose-invert max-w-none">
-              <ReactMarkdown
-                components={{
-                  p: ({ children }) => <p className="text-gray-200 mb-3 leading-relaxed">{children}</p>,
-                  strong: ({ children }) => <strong className="text-blue-300 font-semibold">{children}</strong>,
-                  ul: ({ children }) => <ul className="list-disc list-inside space-y-2 mb-4 text-gray-200">{children}</ul>,
-                  li: ({ children }) => <li className="text-gray-300">{children}</li>,
-                }}
-              >
-                {details}
-              </ReactMarkdown>
-            </div>
+            <PolicyDetailsDisplay details={details} />
           ) : (
             <p className="text-gray-400">Unable to load policy details.</p>
           )}
@@ -1198,7 +1418,7 @@ function PurchaseForm({ quote, quoteId, tripDetails, isOpen, onClose, onComplete
 
 // Quote Card with Purchase Button
 function QuoteCard({ quote, quoteId, tripDetails, onPurchase, language = 'en' }: { 
-  quote: { plan_name: string; price: number; currency: string; recommended_for: string; offer_id?: string; product_code?: string; source?: string; score?: number; benefits?: string[]; reasons?: string[]; cost_source?: string }
+  quote: { plan_name: string; price: number; currency: string; recommended_for: string; offer_id?: string; product_code?: string; source?: string; score?: number; benefits?: string[]; reasons?: string[]; cost_source?: string; local_policy_name?: string }
   quoteId?: string
   tripDetails?: any
   onPurchase: (quote: any, insureds: any[], paymentInfo: any) => void
@@ -1210,12 +1430,98 @@ function QuoteCard({ quote, quoteId, tripDetails, onPurchase, language = 'en' }:
   
   // UI Translations
   const translations = {
-    en: { buyNow: 'Buy Now', matchScore: 'Match Score', keyBenefits: 'Key Benefits' },
-    ta: { buyNow: 'இப்போது வாங்க', matchScore: 'பொருந்தும் மதிப்பெண்', keyBenefits: 'முக்கிய நன்மைகள்' },
-    zh: { buyNow: '立即购买', matchScore: '匹配分数', keyBenefits: '主要福利' },
-    ms: { buyNow: 'Beli Sekarang', matchScore: 'Skor Padanan', keyBenefits: 'Faedah Utama' }
+    en: { buyNow: 'Buy Now', matchScore: 'Policy Match Score', keyBenefits: 'Key Benefits', aiInsights: 'AI-Driven Insights', whyThisPolicy: 'Why This Policy?' },
+    ta: { buyNow: 'இப்போது வாங்க', matchScore: 'கொள்கை பொருத்த மதிப்பெண்', keyBenefits: 'முக்கிய நன்மைகள்', aiInsights: 'AI-வழங்கிய நுண்ணறிவுகள்', whyThisPolicy: 'இந்த கொள்கை ஏன்?' },
+    zh: { buyNow: '立即购买', matchScore: '政策匹配分数', keyBenefits: '主要福利', aiInsights: 'AI驱动的洞察', whyThisPolicy: '为什么选择此政策?' },
+    ms: { buyNow: 'Beli Sekarang', matchScore: 'Skor Padanan Polisi', keyBenefits: 'Faedah Utama', aiInsights: 'Wawasan Didorong AI', whyThisPolicy: 'Mengapa Polisi Ini?' }
   }
   const t = translations[language as keyof typeof translations] || translations.en
+  
+  // Generate AI insights based on quote and trip details
+  const generateInsights = () => {
+    const insights = []
+    
+    // Use quote reasons if available (from backend scoring)
+    if (quote.reasons && quote.reasons.length > 0) {
+      return quote.reasons.slice(0, 4) // Max 4 insights
+    }
+    
+    // Generate personalized insights based on trip and quote properties
+    const destination = tripDetails?.destination || ''
+    const travelers = tripDetails?.travelers || tripDetails?.pax || 1
+    const duration = tripDetails?.departure_date && tripDetails?.return_date 
+      ? Math.ceil((new Date(tripDetails.return_date).getTime() - new Date(tripDetails.departure_date).getTime()) / (1000 * 60 * 60 * 24))
+      : null
+    
+    // Match score insights
+    if (quote.score !== undefined) {
+      if (quote.score >= 90) {
+        insights.push("🎯 Perfect match - This policy is ideally suited for your trip profile")
+      } else if (quote.score >= 80) {
+        insights.push("⭐ Excellent match - Highly recommended for your travel needs")
+      } else if (quote.score >= 70) {
+        insights.push("✅ Strong match - Well-aligned with your trip requirements")
+      } else {
+        insights.push("✓ Good option - Suitable coverage for your travel")
+      }
+    }
+    
+    // Destination-specific insights
+    if (destination) {
+      const destLower = destination.toLowerCase()
+      if (destLower.includes('india')) {
+        insights.push("🇮🇳 Optimal coverage for travel to India with comprehensive medical protection")
+      } else if (destLower.includes('china') || destLower.includes('japan')) {
+        insights.push("🌏 Excellent coverage for Asian destinations with medical evacuation support")
+      } else {
+        insights.push(`✈️ Tailored coverage designed for travel to ${destination}`)
+      }
+    }
+    
+    // Duration insights
+    if (duration && duration > 7) {
+      insights.push(`📅 Extended trip coverage - Perfect for your ${duration}-day journey`)
+    } else if (duration) {
+      insights.push(`📅 Comprehensive protection for your ${duration}-day trip`)
+    }
+    
+    // Multi-traveler insights
+    if (travelers > 1) {
+      insights.push(`👥 Coverage for ${travelers} travelers with family-friendly benefits`)
+    }
+    
+    // Ancileo-specific insights
+    if (isAncileo) {
+      insights.push("🌟 Real-time pricing from verified insurance providers - Instant quotes")
+      insights.push("💎 Premium policy with comprehensive coverage and 24/7 emergency support")
+    }
+    
+    // Policy-specific insights based on name
+    if (cleanedName.toLowerCase().includes('scootsurance')) {
+      insights.push("✈️ Perfect for Scoot travelers - Seamless booking integration")
+    }
+    
+    // Price insights
+    if (quote.price && quote.price > 0) {
+      const pricePerDay = duration ? (quote.price / duration).toFixed(2) : null
+      if (pricePerDay && parseFloat(pricePerDay) < 5) {
+        insights.push(`💰 Great value at ${quote.currency || 'SGD'} ${pricePerDay} per day for comprehensive protection`)
+      }
+    }
+    
+    // Ensure at least 3 insights
+    if (insights.length < 3) {
+      insights.push("🛡️ Comprehensive medical and travel inconvenience coverage included")
+      insights.push("🚑 24/7 emergency assistance available worldwide")
+      if (insights.length < 3) {
+        insights.push("✅ Reliable protection for peace of mind throughout your journey")
+      }
+    }
+    
+    return insights.slice(0, 4) // Return max 4 insights
+  }
+  
+  const aiInsights = generateInsights()
   
   return (
     <>
@@ -1242,37 +1548,45 @@ function QuoteCard({ quote, quoteId, tripDetails, onPurchase, language = 'en' }:
             </p>
           </div>
         </div>
-        <p className="text-gray-400 text-sm mb-4">{quote.recommended_for}</p>
-        {quote.score !== undefined && (
-          <div className="mb-4">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-gray-400">{t.matchScore}</span>
-              <span className="text-sm font-semibold text-blue-400">{quote.score}/100</span>
-            </div>
-            <div className="w-full bg-gray-700 rounded-full h-2">
-              <div 
-                className="bg-gradient-to-r from-blue-600 to-indigo-600 h-2 rounded-full transition-all"
-                style={{ width: `${quote.score}%` }}
-              />
-            </div>
+        {/* Policy Match Score */}
+        <div className="mb-4 bg-gradient-to-r from-purple-900/30 to-pink-900/30 rounded-lg p-3 border border-purple-500/20">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-purple-300 flex items-center gap-1">
+              <Sparkles className="w-3 h-3" />
+              {t.matchScore}
+            </span>
+            <span className="text-lg font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+              {quote.score !== undefined ? quote.score : 100}/100
+            </span>
           </div>
-        )}
-        {quote.benefits && quote.benefits.length > 0 && (
-          <div className="mb-4">
-            <p className="text-xs text-gray-400 mb-1">{t.keyBenefits}:</p>
-            <ul className="text-xs text-gray-300 space-y-1">
-              {quote.benefits.slice(0, 3).map((benefit: string, idx: number) => (
-                <li key={idx} className="flex items-start gap-1">
-                  <span className="text-blue-400 mt-0.5">•</span>
-                  <span>{benefit}</span>
-                </li>
-              ))}
-            </ul>
+          <div className="w-full bg-gray-700/50 rounded-full h-2.5 overflow-hidden">
+            <div 
+              className="bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 h-2.5 rounded-full transition-all duration-500 animate-pulse"
+              style={{ width: `${quote.score !== undefined ? quote.score : 100}%` }}
+            />
           </div>
-        )}
+        </div>
+        
+        {/* AI-Driven Insights */}
+        <div className="mb-4 bg-gradient-to-br from-blue-900/20 to-purple-900/20 rounded-lg p-4 border border-blue-500/30">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles className="w-4 h-4 text-blue-400" />
+            <h4 className="text-sm font-semibold text-blue-300">{t.aiInsights}</h4>
+          </div>
+          <ul className="space-y-2">
+            {aiInsights.map((insight: string, idx: number) => (
+              <li key={idx} className="flex items-start gap-2 text-sm text-gray-200">
+                <span className="text-blue-400 mt-0.5 flex-shrink-0">•</span>
+                <span className="leading-relaxed">{insight}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        
+        {/* Buy Now Button */}
         <button
           onClick={() => setShowPurchaseForm(true)}
-          className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-3 px-4 rounded-lg transition-all flex items-center justify-center gap-2"
+          className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-3 px-4 rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform hover:scale-105"
         >
           <ShoppingCart className="w-4 h-4" />
           {t.buyNow}
@@ -1296,6 +1610,122 @@ function QuoteCard({ quote, quoteId, tripDetails, onPurchase, language = 'en' }:
   )
 }
 
+// Trip Details and Recommendations Display Component
+function TripDetailsRecommendations({ content, quotes }: { content: string; quotes?: any[] }) {
+  // Check if this is a trip details/recommendations message
+  const isTripDetailsMessage = content.includes('Trip Details Extracted') && content.includes('Insurance Recommendations')
+  
+  if (!isTripDetailsMessage) return null
+  
+  // Parse trip details
+  const destinationMatch = content.match(/Destination:\s*([^\n•]+)/i)
+  const departureMatch = content.match(/Departure:\s*([^\n•]+)/i)
+  const returnMatch = content.match(/Return:\s*([^\n•]+)/i)
+  const travelersMatch = content.match(/Travelers:\s*([^\n•]+)/i)
+  
+  const quoteCount = quotes?.length || 0
+  const singlePlan = quoteCount === 1
+  
+  return (
+    <div className="space-y-6 my-6 animate-fade-in">
+      {/* Trip Details Card */}
+      <div className="bg-gradient-to-r from-cyan-900/30 via-blue-900/30 to-indigo-900/30 rounded-xl p-5 border border-cyan-500/30 hover:border-cyan-400/50 transition-all duration-300 animate-slide-down" style={{ animationDelay: '0ms' }}>
+        <div className="flex items-center gap-2 mb-4">
+          <div className="w-1 h-6 bg-gradient-to-b from-cyan-400 to-blue-400 rounded-full animate-pulse"></div>
+          <h3 className="text-lg font-bold text-cyan-300 flex items-center gap-2">
+            <Plane className="w-5 h-5" />
+            Trip Details Extracted
+          </h3>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {destinationMatch && (
+            <div className="flex items-start gap-2 animate-slide-right" style={{ animationDelay: '100ms' }}>
+              <span className="text-cyan-400 mt-1 text-lg">📍</span>
+              <div>
+                <span className="text-cyan-300 font-semibold">Destination: </span>
+                <span className="text-gray-200">{destinationMatch[1].trim()}</span>
+              </div>
+            </div>
+          )}
+          {departureMatch && (
+            <div className="flex items-start gap-2 animate-slide-right" style={{ animationDelay: '150ms' }}>
+              <span className="text-cyan-400 mt-1 text-lg">📅</span>
+              <div>
+                <span className="text-cyan-300 font-semibold">Departure: </span>
+                <span className="text-gray-200">{departureMatch[1].trim()}</span>
+              </div>
+            </div>
+          )}
+          {returnMatch && (
+            <div className="flex items-start gap-2 animate-slide-right" style={{ animationDelay: '200ms' }}>
+              <span className="text-cyan-400 mt-1 text-lg">📅</span>
+              <div>
+                <span className="text-cyan-300 font-semibold">Return: </span>
+                <span className="text-gray-200">{returnMatch[1].trim()}</span>
+              </div>
+            </div>
+          )}
+          {travelersMatch && (
+            <div className="flex items-start gap-2 animate-slide-right" style={{ animationDelay: '250ms' }}>
+              <span className="text-cyan-400 mt-1 text-lg">👥</span>
+              <div>
+                <span className="text-cyan-300 font-semibold">Travelers: </span>
+                <span className="text-gray-200">{travelersMatch[1].trim()}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      
+      {/* Insurance Recommendations Card */}
+      {quotes && quotes.length > 0 && (
+        <div className="bg-gradient-to-r from-purple-900/30 via-pink-900/30 to-purple-900/30 rounded-xl p-5 border border-purple-500/30 hover:border-purple-400/50 transition-all duration-300 animate-slide-down" style={{ animationDelay: '300ms' }}>
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-1 h-6 bg-gradient-to-b from-purple-400 to-pink-400 rounded-full animate-pulse"></div>
+            <h3 className="text-lg font-bold text-purple-300 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 animate-pulse" />
+              Insurance Recommendation{!singlePlan ? 's' : ''}
+            </h3>
+          </div>
+          <div className="space-y-3">
+            {quotes.map((quote: any, idx: number) => (
+              <div
+                key={idx}
+                className="bg-gradient-to-r from-purple-800/20 to-pink-800/20 rounded-lg p-4 border border-purple-500/20 hover:border-purple-400/40 transition-all duration-200 animate-slide-right"
+                style={{ animationDelay: `${400 + idx * 50}ms` }}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <h4 className="text-lg font-bold text-purple-200 mb-1">{quote.plan_name}</h4>
+                    <p className="text-purple-300 text-sm mb-2">{quote.recommended_for}</p>
+                    <div className="flex items-center gap-4 flex-wrap">
+                      <span className="text-2xl font-bold text-purple-400">
+                        {quote.currency || 'SGD'} {quote.price.toFixed(2)}
+                      </span>
+                      {quote.score && (
+                        <span className="px-2 py-1 bg-purple-700/30 text-purple-300 text-xs font-semibold rounded-full border border-purple-500/50">
+                          Score: {quote.score}/100
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 pt-4 border-t border-purple-500/30">
+            <p className="text-purple-200 text-sm animate-fade-in" style={{ animationDelay: '500ms' }}>
+              {singlePlan 
+                ? "✨ Would you like to learn more about this plan or proceed with purchasing?" 
+                : "✨ Which plan would you like to learn more about?"}
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Enhanced Message Renderer with cards
 function EnhancedMarkdown({ content, quotes, language = 'en' }: { content: string; quotes?: any[]; language?: string }) {
   const [selectedPolicy, setSelectedPolicy] = useState<any | null>(null)
@@ -1309,21 +1739,7 @@ function EnhancedMarkdown({ content, quotes, language = 'en' }: { content: strin
   }
   const t = translations[language as keyof typeof translations] || translations.en
   
-  // Extract policy mentions from text content (local policies) - only if content actually mentions policies
-  const policyRegex = /(INTERNATIONAL TRAVEL|MHInsure Travel|Scootsurance|MSIG|Policy:\s*[^\]]+)/gi
-  const textPolicies = Array.from(new Set(
-    (content.match(policyRegex)?.map(m => cleanPolicyName(m.replace(/Policy:\s*/i, '').trim())) || [])
-      .filter(Boolean)
-  )).map(name => ({
-    name,
-    isAncileo: false,
-    source: 'local'
-  }))
-  
-  // Only show policies if there are actual policy mentions OR quotes provided
-  const hasPolicyContent = textPolicies.length > 0 || (quotes && quotes.length > 0)
-  
-  // Extract Ancileo policies from quotes
+  // Extract Ancileo policies from quotes - ONLY show Ancileo policies
   const ancileoPolicies = (quotes || [])
     .filter(q => q.source === 'ancileo' || q.offer_id)
     .map(q => ({
@@ -1332,28 +1748,24 @@ function EnhancedMarkdown({ content, quotes, language = 'en' }: { content: strin
       source: 'ancileo',
       quote: q,
       productCode: q.product_code,
-      offerId: q.offer_id
+      offerId: q.offer_id,
+      quoteId: q.quote_id,
+      local_policy_name: q.local_policy_name
     }))
   
-  // Combine all policies, removing duplicates (prioritize Ancileo)
-  const allPoliciesMap = new Map<string, any>()
+  // Only show the first/recommended Ancileo policy (only one button)
+  const policies = ancileoPolicies.length > 0 ? [ancileoPolicies[0]] : []
   
-  // First add text policies
-  textPolicies.forEach(p => {
-    if (!allPoliciesMap.has(p.name.toLowerCase())) {
-      allPoliciesMap.set(p.name.toLowerCase(), p)
-    }
-  })
+  // Only show policies if there are Ancileo quotes
+  const hasPolicyContent = ancileoPolicies.length > 0
   
-  // Then add/override with Ancileo policies
-  ancileoPolicies.forEach(p => {
-    allPoliciesMap.set(p.name.toLowerCase(), p)
-  })
-  
-  const policies = Array.from(allPoliciesMap.values())
+  // Check if this is a trip details/recommendations message - if so, use custom component
+  const isTripDetailsMessage = content.includes('Trip Details Extracted') && content.includes('Insurance Recommendations')
   
   return (
     <>
+      {isTripDetailsMessage && <TripDetailsRecommendations content={content} quotes={quotes} />}
+      {!isTripDetailsMessage && (
       <ReactMarkdown
         components={{
           p: ({ children }) => (
@@ -1408,12 +1820,32 @@ function EnhancedMarkdown({ content, quotes, language = 'en' }: { content: strin
           ol: ({ children }) => (
             <ol className="mb-4 space-y-2 list-decimal pl-6 my-4">{children}</ol>
           ),
-          li: ({ children }) => (
-            <li className="flex items-start gap-3 text-gray-200 mb-3 leading-relaxed">
-              <span className="text-blue-400 mt-1.5 flex-shrink-0 font-bold text-lg">•</span>
-              <span className="flex-1 text-[15px] font-normal">{children}</span>
-            </li>
-          ),
+          li: ({ children }) => {
+            const text = String(children)
+            const isTripDetail = text.includes('Destination:') || text.includes('Departure:') || text.includes('Return:') || text.includes('Travelers:')
+            const isInsuranceRecommendation = text.includes('Score:') || text.includes('SGD') || text.includes('USD')
+            
+            let delay = 0
+            let colorClass = 'text-blue-400'
+            
+            if (isTripDetail) {
+              delay = 200
+              colorClass = 'text-cyan-400'
+            } else if (isInsuranceRecommendation) {
+              delay = 300
+              colorClass = 'text-purple-400'
+            }
+            
+            return (
+              <li 
+                className="flex items-start gap-3 text-gray-200 mb-3 leading-relaxed animate-slide-right hover:bg-gray-700/30 rounded-lg p-2 -ml-2 transition-all duration-200"
+                style={{ animationDelay: `${delay}ms` }}
+              >
+                <span className={`${colorClass} mt-1.5 flex-shrink-0 font-bold text-lg animate-pulse`}>•</span>
+                <span className="flex-1 text-[15px] font-normal">{children}</span>
+              </li>
+            )
+          },
           h1: ({ children }) => (
             <h1 className="text-3xl font-bold text-white mb-5 mt-8 first:mt-0">
               {children}
@@ -1424,9 +1856,26 @@ function EnhancedMarkdown({ content, quotes, language = 'en' }: { content: strin
               {children}
             </h2>
           ),
-          h3: ({ children }) => (
-            <h3 className="text-xl font-semibold text-gray-100 mb-3 mt-6 first:mt-0">{children}</h3>
-          ),
+          h3: ({ children }) => {
+            const text = String(children)
+            if (text.includes('Trip Details Extracted')) {
+              return (
+                <h3 className="text-xl font-semibold text-blue-300 mb-4 mt-6 first:mt-0 flex items-center gap-2 animate-slide-down" style={{ animationDelay: '0ms' }}>
+                  <Plane className="w-5 h-5 text-blue-400" />
+                  {children}
+                </h3>
+              )
+            }
+            if (text.includes('Insurance Recommendations')) {
+              return (
+                <h3 className="text-xl font-semibold text-purple-300 mb-4 mt-6 first:mt-0 flex items-center gap-2 animate-slide-down" style={{ animationDelay: '100ms' }}>
+                  <Sparkles className="w-5 h-5 text-purple-400 animate-pulse" />
+                  {children}
+                </h3>
+              )
+            }
+            return <h3 className="text-xl font-semibold text-gray-100 mb-3 mt-6 first:mt-0">{children}</h3>
+          },
           h4: ({ children }) => (
             <h4 className="text-lg font-semibold text-gray-200 mb-3 mt-5 first:mt-0">{children}</h4>
           ),
@@ -1445,41 +1894,31 @@ function EnhancedMarkdown({ content, quotes, language = 'en' }: { content: strin
       >
         {content}
       </ReactMarkdown>
+      )}
       
-      {/* Policy Cards Section - Including Ancileo Policies - Only show if policies are mentioned */}
+      {/* Policy Cards Section - Only show Ancileo policy (pink button) */}
       {hasPolicyContent && policies.length > 0 && (
         <div className="mt-8 pt-6">
           <div className="mb-5">
             <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-blue-400" />
-              Referenced Policies
+              <Sparkles className="w-5 h-5 text-purple-400" />
+              Referenced Policy
             </h3>
-            <p className="text-gray-400 text-sm">
-              {ancileoPolicies.length > 0 && (
-                <span className="inline-flex items-center gap-1 text-purple-300">
-                  <Sparkles className="w-3 h-3" />
-                  {ancileoPolicies.length} Ancileo {ancileoPolicies.length === 1 ? 'policy' : 'policies'} available
-                </span>
-              )}
-              {ancileoPolicies.length > 0 && textPolicies.length > 0 && <span className="mx-2">•</span>}
-              {textPolicies.length > 0 && (
-                <span className="text-blue-300">{textPolicies.length} Local {textPolicies.length === 1 ? 'policy' : 'policies'}</span>
-              )}
-            </p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="flex justify-center">
             {policies.map((policy, idx) => (
               <PolicyCard
                 key={idx}
                 policyName={typeof policy === 'string' ? policy : policy.name}
-                isAncileo={typeof policy === 'object' ? policy.isAncileo : false}
-                source={typeof policy === 'object' ? policy.source : 'local'}
+                isAncileo={true}
+                source="ancileo"
                 onClick={() => setSelectedPolicy(typeof policy === 'object' ? {
                   name: policy.name,
-                  isAncileo: policy.isAncileo,
+                  isAncileo: true,
                   productCode: policy.productCode,
                   offerId: policy.offerId,
-                  quoteId: quotes?.[0]?.quote_id
+                  quoteId: policy.quoteId || quotes?.[0]?.quote_id,
+                  local_policy_name: policy.local_policy_name
                 } : policy)}
               />
             ))}
@@ -1496,6 +1935,7 @@ function EnhancedMarkdown({ content, quotes, language = 'en' }: { content: strin
           productCode={typeof selectedPolicy === 'object' ? selectedPolicy.productCode : undefined}
           offerId={typeof selectedPolicy === 'object' ? selectedPolicy.offerId : undefined}
           quoteId={typeof selectedPolicy === 'object' ? selectedPolicy.quoteId : undefined}
+          localPolicyName={typeof selectedPolicy === 'object' ? selectedPolicy.local_policy_name : undefined}
         />
       )}
     </>
@@ -2272,9 +2712,23 @@ export default function Home() {
             console.log('✅ Received Policy_Wordings policies:', quotes.map((q: any) => q.plan_name))
           }
           
+          // Build a nicely formatted message content
+          const tripDetailsText = `${tripInfo.destination ? `• Destination: ${tripInfo.destination}` : ''}${tripInfo.departure_date ? `\n• Departure: ${tripInfo.departure_date}` : ''}${tripInfo.return_date ? `\n• Return: ${tripInfo.return_date}` : ''}${tripInfo.pax ? `\n• Travelers: ${tripInfo.pax}` : tripInfo.travelers?.length ? `\n• Travelers: ${tripInfo.travelers.length}` : ''}${claimsSection}`
+          
+          const quotesText = quotes.length > 0 
+            ? quotes.map((q: any) => `• **${q.plan_name}**: $${q.price.toFixed(2)} ${q.currency || 'SGD'} ${q.score ? `(Score: ${q.score}/100)` : ''} - ${q.recommended_for}`).join('\n')
+            : 'No quotes available'
+          
+          // Use singular/plural based on number of quotes
+          const recommendationPrompt = quotes.length === 1
+            ? "Would you like to learn more about this plan or proceed with purchasing?"
+            : quotes.length > 1
+            ? "Which plan would you like to learn more about?"
+            : "Let me know if you need help finding the right coverage for your trip."
+          
           const successMsg: Message = {
             role: 'assistant',
-            content: `✅ **Document Processed Successfully!**\n\n### 📄 Trip Details Extracted\n\n${tripInfo.destination ? `• Destination: ${tripInfo.destination}` : ''}${tripInfo.departure_date ? `\n• Departure: ${tripInfo.departure_date}` : ''}${tripInfo.return_date ? `\n• Return: ${tripInfo.return_date}` : ''}${tripInfo.pax ? `\n• Travelers: ${tripInfo.pax}` : tripInfo.travelers?.length ? `\n• Travelers: ${tripInfo.travelers.length}` : ''}${claimsSection}\n\n### 💡 Insurance Recommendations\n\n${quotes.length > 0 ? quotes.map((q: any, i: number) => `• **${q.plan_name}**: $${q.price.toFixed(2)} ${q.currency || 'SGD'} ${q.score ? `(Score: ${q.score}/100)` : ''} - ${q.recommended_for}`).join('\n') : 'No quotes available'}\n\nWhich plan would you like to learn more about?`,
+            content: `✅ **Document Processed Successfully!**\n\n### 📄 Trip Details Extracted\n\n${tripDetailsText}\n\n### 💡 Insurance Recommendations\n\n${quotesText}\n\n${recommendationPrompt}`,
             timestamp: new Date(),
             quotes: quotes,
             quote_id: quoteData.quote_id || null,

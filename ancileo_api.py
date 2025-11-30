@@ -220,14 +220,35 @@ class AncileoAPI:
                 "message": "Please set ANCILEO_API_KEY_1, ANCILEO_API_KEY_2, and/or ANCILEO_API_KEY_3 in .env file"
             }
         
-        # Validate dates
+        # Validate dates are provided and in correct format
         if not departure_date:
             departure_date = datetime.now().strftime("%Y-%m-%d")
+        else:
+            # Ensure date is in YYYY-MM-DD format
+            try:
+                # Validate format
+                datetime.strptime(departure_date, "%Y-%m-%d")
+            except (ValueError, TypeError):
+                logger.error(f"Invalid departure_date format received: {departure_date}")
+                raise ValueError(f"departure_date must be in YYYY-MM-DD format, got: {departure_date}")
+        
         if trip_type == "RT" and not return_date:
             # Default to 7 days after departure
             from datetime import timedelta
-            departure_dt = datetime.strptime(departure_date, "%Y-%m-%d")
-            return_date = (departure_dt + timedelta(days=7)).strftime("%Y-%m-%d")
+            try:
+                departure_dt = datetime.strptime(departure_date, "%Y-%m-%d")
+                return_date = (departure_dt + timedelta(days=7)).strftime("%Y-%m-%d")
+            except (ValueError, TypeError) as e:
+                logger.error(f"Error calculating default return_date: {e}")
+                raise ValueError(f"Invalid departure_date for calculating return_date: {departure_date}")
+        
+        # Validate return_date format if provided
+        if return_date:
+            try:
+                datetime.strptime(return_date, "%Y-%m-%d")
+            except (ValueError, TypeError):
+                logger.error(f"Invalid return_date format received: {return_date}")
+                raise ValueError(f"return_date must be in YYYY-MM-DD format, got: {return_date}")
         
         # Default airports if not provided (use country code as fallback)
         if not departure_airport:
@@ -275,18 +296,33 @@ class AncileoAPI:
         if currency:
             context["currency"] = currency
         
-        # Build request body according to new Ancileo API documentation format
+        # Build request body according to Ancileo API documentation format
+        # Match exact structure from API documentation
         request_body = {
             "market": market.upper(),
             "languageCode": language_code.lower(),
-            "channel": channel,  # "white-label" as per new docs
-            "deviceType": device_type.upper(),  # "DESKTOP" as per new docs
+            "channel": channel,  # "white-label" as per API docs
+            "deviceType": device_type.upper(),  # "DESKTOP" as per API docs
+            "touchPoint": "details",  # Required field per API docs
             "context": context
         }
         
         # Add insureds if provided (optional, but if provided, age counts become optional)
+        # Insureds format: [{"id": "1", "dateOfBirth": "2000-01-01", "nationality": "SG"}]
         if insureds:
-            request_body["insureds"] = insureds
+            # Ensure insureds have proper format
+            formatted_insureds = []
+            for idx, insured in enumerate(insureds, start=1):
+                formatted_insured = {
+                    "id": insured.get("id") or str(idx),
+                    "dateOfBirth": insured.get("dateOfBirth") or insured.get("date_of_birth") or insured.get("dob"),
+                    "nationality": insured.get("nationality", "SG")
+                }
+                # Only add if DOB is available (required by API)
+                if formatted_insured["dateOfBirth"]:
+                    formatted_insureds.append(formatted_insured)
+            if formatted_insureds:
+                request_body["insureds"] = formatted_insureds
         
         # Try all available API keys to get maximum coverage
         # Start with round-robin, but we'll collect results from all keys
@@ -299,12 +335,14 @@ class AncileoAPI:
             try:
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     # Log request details for debugging
-                    logger.debug(f"Ancileo API Request URL: {self.base_url}/pricing (using key {key_num})")
-                    logger.debug(f"Ancileo API Request Body: {json.dumps(request_body, indent=2)}")
+                    logger.info(f"Ancileo API Request URL: {self.base_url}/pricing (using key {key_num})")
+                    logger.info(f"Ancileo API Request Body: {json.dumps(request_body, indent=2)}")
+                    logger.info(f"Departure Date: {departure_date}, Return Date: {return_date}")
+                    logger.info(f"Context dates: {context.get('departureDate')}, {context.get('returnDate')}")
                     
                     headers = {
                         "Content-Type": "application/json",
-                        "X-Api-Key": api_key
+                        "x-api-key": api_key  # Use lowercase as per API documentation
                     }
                     
                     response = await client.post(
@@ -452,11 +490,19 @@ class AncileoAPI:
                         options = offer.get("options", [])
                         
                         # Handle price - ensure it's a float
+                        original_unit_price = unit_price
                         if isinstance(unit_price, str):
                             try:
                                 unit_price = float(unit_price.replace(",", ""))
                             except (ValueError, AttributeError):
+                                logger.warning(f"Could not parse unitPrice '{original_unit_price}' as float for {product_code}")
                                 unit_price = 0
+                        elif unit_price is None:
+                            logger.warning(f"unitPrice is None for {product_code}")
+                            unit_price = 0
+                        
+                        # Log price extraction for debugging
+                        logger.info(f"📦 Extracted from Ancileo: {product_title} (code: {product_code}) - Price: ${unit_price} {currency}")
                         
                         # Convert HTML benefits to plain text description (strip HTML tags)
                         import re
@@ -488,7 +534,7 @@ class AncileoAPI:
                         }
                         policies.append(policy)
                         
-                        logger.debug(f"Parsed policy: {product_title} (${unit_price} {currency})")
+                        logger.info(f"✅ Parsed policy: {product_title} - ${unit_price} {currency} (offer_id: {offer_id})")
                         
                     except Exception as e:
                         logger.warning(f"Error parsing individual offer: {e}")

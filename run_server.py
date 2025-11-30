@@ -1257,11 +1257,14 @@ async def extract_trip(request: dict):
 @app.post("/api/quote")
 async def generate_quote(request: dict):
     """
-    Generate quote - NEW FLOW:
-    1. Match policies using JSON taxonomies (NO ANCILEO)
-    2. Use Ancileo API ONLY for cost calculation
-    3. Combine results with scoring
+    Generate quote - PRIMARY SOURCE: Ancileo API
+    1. Extract user details and trip info
+    2. Get quotes directly from Ancileo API
+    3. Use taxonomy matching as FALLBACK only if Ancileo fails
     """
+    from datetime import datetime, timedelta
+    import re
+    
     # Validate required fields first
     required_fields = ["destination", "start_date", "end_date"]
     missing_fields = [field for field in required_fields if not request.get(field)]
@@ -1274,63 +1277,108 @@ async def generate_quote(request: dict):
             "message": f"Please provide: {', '.join(missing_fields)}"
         }
     
-    # STEP 1: Match policies using JSON taxonomies (NO ANCILEO)
+    # Extract and normalize trip details
+    departure_date_raw = request.get("start_date") or request.get("departure_date")
+    return_date_raw = request.get("end_date") or request.get("return_date")
+    destination = request.get("destination") or request.get("trip_details", {}).get("destination", "")
+    
+    logger.info(f"📋 Quote request - destination: '{destination}', request keys: {list(request.keys())}")
+    if request.get("trip_details"):
+        logger.info(f"📋 trip_details destination: '{request.get('trip_details', {}).get('destination', '')}'")
+    
+    # Normalize date format - ensure YYYY-MM-DD format
+    def normalize_date(date_str):
+        if not date_str:
+            return None
+        date_str = str(date_str).strip()
+        
+        # If already in YYYY-MM-DD format, validate it's a valid date
+        if re.match(r'^\d{4}-\d{2}-\d{2}$', date_str):
+            try:
+                dt = datetime.strptime(date_str, "%Y-%m-%d")
+                # Return in YYYY-MM-DD format - don't check if it's in the future
+                # (Ancileo API will validate this)
+                return dt.strftime("%Y-%m-%d")
+            except ValueError:
+                # Invalid date (e.g., 2025-13-45)
+                return None
+        
+        # Try to parse various formats and convert to YYYY-MM-DD
+        date_formats = ["%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%m/%d/%Y", "%Y/%m/%d", "%Y%m%d"]
+        for fmt in date_formats:
+            try:
+                dt = datetime.strptime(date_str, fmt)
+                return dt.strftime("%Y-%m-%d")
+            except:
+                continue
+        return None
+    
+    departure_date = normalize_date(departure_date_raw)
+    return_date = normalize_date(return_date_raw)
+    
+    # Validate dates
+    if not departure_date:
+        return {
+            "success": False,
+            "error": "Invalid departure date",
+            "message": f"Invalid departure date format: {departure_date_raw}. Please use YYYY-MM-DD format (e.g., 2025-12-05)."
+        }
+    
+    # Validate dates are in the future (Ancileo API requirement)
+    today = datetime.now().date()
+    try:
+        dep_dt = datetime.strptime(departure_date, "%Y-%m-%d").date()
+        if dep_dt < today:
+            return {
+                "success": False,
+                "error": "Invalid departure date",
+                "message": f"Departure date ({departure_date}) must be today or in the future. Today is {today.strftime('%Y-%m-%d')}."
+            }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": "Invalid departure date format",
+            "message": f"Date parsing error: {str(e)}"
+        }
+    
+    # Validate return date if provided
+    if return_date:
+        try:
+            dep_dt = datetime.strptime(departure_date, "%Y-%m-%d").date()
+            ret_dt = datetime.strptime(return_date, "%Y-%m-%d").date()
+            if ret_dt <= dep_dt:
+                return {
+                    "success": False,
+                    "error": "Invalid return date",
+                    "message": "Return date must be after departure date."
+                }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": "Invalid date format",
+                "message": f"Date parsing error: {str(e)}"
+            }
+    
+    # Extract trip details
+    trip_data = {
+        "destination": destination,
+        "source": request.get("source"),
+        "departure_date": departure_date,
+        "return_date": return_date,
+        "pax": request.get("travelers", 1),
+        "ticket_policies": request.get("ticket_policies", [])
+    }
+    
     user_data = {
         "age": request.get("user_age") or request.get("age") or 30,
         "interests": request.get("interests", []),
         "medical_conditions": request.get("medical_conditions", [])
     }
     
-    trip_data = {
-        "destination": request.get("destination"),
-        "source": request.get("source"),
-        "departure_date": request.get("start_date") or request.get("departure_date"),
-        "return_date": request.get("end_date") or request.get("return_date"),
-        "pax": request.get("travelers", 1),
-        "ticket_policies": request.get("ticket_policies", [])
-    }
-    
     extracted_data = request.get("extracted_data", {})
     
-    # STEP 1: Match policies against taxonomy (NO TIERS, just return what matches)
-    matched_policies = []
-    try:
-        matched_policies = await taxonomy_matcher.match_policies(
-            user_data=user_data,
-            trip_data=trip_data,
-            extracted_data=extracted_data
-        )
-        logger.info(f"✅ Matched {len(matched_policies)} applicable policies from taxonomy")
-        if matched_policies:
-            logger.info(f"Policy names: {[p.get('policy_name') for p in matched_policies]}")
-        else:
-            logger.warning("⚠️ No policies matched from taxonomy for this trip/user profile")
-    except Exception as e:
-        logger.error(f"Taxonomy matching failed: {e}", exc_info=True)
-        matched_policies = []
-    
-    # NO FALLBACKS - just return what taxonomy matching found
-    if not matched_policies or len(matched_policies) == 0:
-        logger.warning("No applicable policies found from taxonomy matching")
-        # Return empty quotes - let user know no policies match
-        return {
-            "success": True,
-            "source": "taxonomy_match",
-            "quotes": [],
-            "trip_details": {
-                "destination": trip_data.get("destination"),
-                "source": trip_data.get("source"),
-                "departure_date": trip_data.get("departure_date"),
-                "return_date": trip_data.get("return_date"),
-                "travelers": trip_data.get("pax", 1)
-            },
-            "message": "No insurance policies found that match your trip details and profile. Please adjust your search criteria."
-        }
-    
-    # STEP 2: Get costs from Ancileo API ONLY (for cost calculation)
+    # STEP 1: PRIMARY SOURCE - Get quotes directly from Ancileo API
     ancileo_quote_id = None
-    ancileo_prices = {}
-    ancileo_currencies = {}
     
     try:
         from ancileo_api import AncileoAPI
@@ -1338,13 +1386,16 @@ async def generate_quote(request: dict):
         
         if ancileo.api_key and ancileo.api_key != "your_ancileo_api_key_here":
             try:
-                # Parse trip details for Ancileo API
-                departure_date = request.get("start_date") or request.get("departure_date")
-                return_date = request.get("end_date") or request.get("return_date")
+                # Use normalized dates from above (already in YYYY-MM-DD format)
                 departure_country = request.get("departure_country", "SG")
-                arrival_country = request.get("arrival_country") or request.get("destination", "CN")
                 
-                # Enhanced country mapping
+                # Get destination from trip_data (which comes from request) - this is the primary source
+                destination = trip_data.get("destination") or request.get("destination") or ""
+                arrival_country = request.get("arrival_country")  # Try explicit arrival_country first
+                
+                logger.info(f"📋 Extracting destination - trip_data destination: '{trip_data.get('destination')}', request destination: '{request.get('destination')}', arrival_country: '{arrival_country}'")
+                
+                # Enhanced country mapping with more cities and countries
                 country_map = {
                     "singapore": "SG", "china": "CN", "japan": "JP", 
                     "thailand": "TH", "malaysia": "MY", "indonesia": "ID",
@@ -1352,24 +1403,183 @@ async def generate_quote(request: dict):
                     "united kingdom": "GB", "uk": "GB", "england": "GB", "france": "FR",
                     "germany": "DE", "italy": "IT", "spain": "ES", "south korea": "KR",
                     "korea": "KR", "hong kong": "HK", "taiwan": "TW", "philippines": "PH",
-                    "vietnam": "VN", "new zealand": "NZ"
+                    "vietnam": "VN", "new zealand": "NZ",
+                    # Indian cities
+                    "coimbatore": "IN", "chennai": "IN", "mumbai": "IN", "delhi": "IN",
+                    "bangalore": "IN", "kolkata": "IN", "hyderabad": "IN", "pune": "IN",
+                    # Other common cities
+                    "tokyo": "JP", "osaka": "JP", "kyoto": "JP",
+                    "bangkok": "TH", "phuket": "TH",
+                    "kuala lumpur": "MY", "penang": "MY",
+                    "jakarta": "ID", "bali": "ID",
+                    "manila": "PH", "cebu": "PH",
+                    "ho chi minh": "VN", "hanoi": "VN",
+                    "seoul": "KR", "busan": "KR",
+                    "beijing": "CN", "shanghai": "CN", "hong kong": "HK"
                 }
                 
                 # Convert destination name to country code if needed
-                if arrival_country and len(arrival_country) > 2:
-                    arrival_lower = arrival_country.lower().strip()
-                    # Check if it's already a code
-                    if len(arrival_country) == 2:
-                        arrival_country = arrival_country.upper()
-                    else:
-                        # Extract country name (handle "Tokyo, Japan" -> "japan")
-                        if "," in arrival_lower:
-                            arrival_lower = arrival_lower.split(",")[-1].strip()
-                        arrival_country = country_map.get(arrival_lower, "CN")
+                logger.info(f"🔍 Destination extraction - destination: '{destination}', arrival_country from request: '{arrival_country}'")
                 
-                # Calculate adults and children from ages
-                travelers = request.get("travelers", 1)
+                # Always extract country from destination if destination is provided
+                # This ensures we use the actual destination, not a default
+                if destination:
+                    destination_lower = destination.lower().strip()
+                    logger.info(f"🔍 Processing destination: '{destination_lower}'")
+                    
+                    # Check if it's already a 2-letter country code
+                    if len(destination) == 2 and destination.isupper():
+                        arrival_country = destination
+                        logger.info(f"✅ Destination is country code: {arrival_country}")
+                    else:
+                        # Try to extract country from destination string
+                        # Handle formats like "Coimbatore, India", "Tokyo, Japan", etc.
+                        found_country = None
+                        
+                        if "," in destination_lower:
+                            # Split by comma and check each part
+                            parts = [p.strip() for p in destination_lower.split(",")]
+                            logger.info(f"🔍 Split destination into parts: {parts}")
+                            
+                            # Check each part from the end (country usually comes last)
+                            for part in reversed(parts):
+                                # Direct match in country_map
+                                if part in country_map:
+                                    found_country = country_map[part]
+                                    logger.info(f"✅ Direct match: '{part}' -> '{found_country}'")
+                                    break
+                                
+                                # Partial match (country name contained in part)
+                                for country_name, code in country_map.items():
+                                    if country_name in part:
+                                        found_country = code
+                                        logger.info(f"✅ Partial match: found '{country_name}' in '{part}' -> '{found_country}'")
+                                        break
+                                if found_country:
+                                    break
+                        else:
+                            # No comma - check if destination contains a country name
+                            for country_name, code in country_map.items():
+                                if country_name in destination_lower:
+                                    found_country = code
+                                    logger.info(f"✅ Found country '{country_name}' in destination -> '{found_country}'")
+                                    break
+                        
+                        if found_country:
+                            arrival_country = found_country
+                        else:
+                            # Fallback - try to guess from common patterns
+                            if any(city in destination_lower for city in ["coimbatore", "chennai", "mumbai", "delhi", "bangalore", "kolkata"]):
+                                arrival_country = "IN"
+                                logger.info(f"✅ Guessed India from city name")
+                            else:
+                                arrival_country = "IN"  # Default to India, but log warning
+                                logger.warning(f"⚠️ Could not map destination '{destination}' to country code, defaulting to IN")
+                elif arrival_country and len(arrival_country) == 2:
+                    # Use explicit arrival_country if destination not provided
+                    arrival_country = arrival_country.upper()
+                    logger.info(f"✅ Using explicit arrival_country: {arrival_country}")
+                else:
+                    # No destination provided and no valid arrival_country
+                    arrival_country = "CN"  # Default fallback
+                    logger.warning(f"⚠️ No destination provided, defaulting to CN")
+                
+                logger.info(f"✅ Final arrival_country: {arrival_country} (from destination: '{destination}')")
+                
+                # Map destination city to airport code
+                airport_map = {
+                    # India airports
+                    "coimbatore": "CJB", "chennai": "MAA", "mumbai": "BOM", "delhi": "DEL",
+                    "bangalore": "BLR", "kolkata": "CCU", "hyderabad": "HYD", "pune": "PNQ",
+                    # Singapore
+                    "singapore": "SIN",
+                    # Thailand
+                    "bangkok": "BKK", "phuket": "HKT",
+                    # Malaysia
+                    "kuala lumpur": "KUL", "penang": "PEN",
+                    # Indonesia
+                    "jakarta": "CGK", "bali": "DPS",
+                    # Philippines
+                    "manila": "MNL", "cebu": "CEB",
+                    # Vietnam
+                    "ho chi minh": "SGN", "hanoi": "HAN",
+                    # Japan
+                    "tokyo": "NRT", "osaka": "KIX", "kyoto": "KIX",
+                    # Korea
+                    "seoul": "ICN", "busan": "PUS",
+                    # China
+                    "beijing": "PEK", "shanghai": "PVG",
+                    # Others
+                    "hong kong": "HKG", "sydney": "SYD", "melbourne": "MEL"
+                }
+                
+                arrival_airport = None
+                destination_lower_for_airport = destination.lower().strip() if destination else ""
+                
+                # Extract city name from destination (before comma if present)
+                if destination_lower_for_airport:
+                    city_name = destination_lower_for_airport.split(",")[0].strip()
+                    if city_name in airport_map:
+                        arrival_airport = airport_map[city_name]
+                        logger.info(f"✅ Mapped destination city '{city_name}' to airport '{arrival_airport}'")
+                    else:
+                        # Fallback to country default airports
+                        country_airport_map = {
+                            "IN": "DEL", "SG": "SIN", "MY": "KUL", "TH": "BKK",
+                            "ID": "CGK", "PH": "MNL", "VN": "SGN", "JP": "NRT",
+                            "CN": "PEK", "KR": "ICN", "AU": "SYD", "US": "LAX", "GB": "LHR"
+                        }
+                        arrival_airport = country_airport_map.get(arrival_country, "SIN")
+                        logger.info(f"✅ Using country default airport '{arrival_airport}' for '{arrival_country}'")
+                else:
+                    arrival_airport = "SIN"  # Fallback
+                
+                logger.info(f"✅ Final arrival_airport: {arrival_airport} (from destination: '{destination}')")
+                
+                # Build insureds array with DOB for accurate Ancileo pricing
+                # This is the preferred method for Ancileo API
+                insureds_list = []
+                travelers_data = request.get("travelers_data", []) or request.get("insureds", [])
                 ages = request.get("ages", [])
+                trip_travelers = trip_data.get("travelers", []) if isinstance(trip_data.get("travelers"), list) else []
+                
+                # Try to get travelers from multiple sources
+                all_travelers = travelers_data or trip_travelers or []
+                
+                if all_travelers and len(all_travelers) > 0:
+                    # Use traveler data with DOB
+                    for idx, traveler in enumerate(all_travelers, start=1):
+                        dob = (traveler.get("dateOfBirth") or 
+                               traveler.get("date_of_birth") or 
+                               traveler.get("dob") or 
+                               "")
+                        
+                        if dob:
+                            insured = {
+                                "id": traveler.get("id") or str(idx),
+                                "dateOfBirth": dob,
+                                "nationality": traveler.get("nationality", "SG")
+                            }
+                            insureds_list.append(insured)
+                
+                # Fallback: build from ages if DOB not available
+                if not insureds_list and ages:
+                    # Calculate approximate DOB from age (use mid-year)
+                    from datetime import datetime, timedelta
+                    today = datetime.now()
+                    for idx, age in enumerate(ages, start=1):
+                        if age > 0:
+                            # Estimate DOB (use June 15 of birth year)
+                            birth_year = today.year - age
+                            estimated_dob = f"{birth_year}-06-15"
+                            insureds_list.append({
+                                "id": str(idx),
+                                "dateOfBirth": estimated_dob,
+                                "nationality": "SG"  # Default, can be enhanced
+                            })
+                
+                # Calculate adults and children counts (for fallback if insureds not used)
+                travelers = request.get("travelers", 1)
                 adults = 0
                 children = 0
                 
@@ -1385,93 +1595,158 @@ async def generate_quote(request: dict):
                 children_count = request.get("children_count", children)
                 adults_count = request.get("adults_count", adults) if adults > 0 else travelers
                 
+                # Validate dates are in correct format before calling Ancileo
+                if not departure_date or not re.match(r'^\d{4}-\d{2}-\d{2}$', departure_date):
+                    logger.error(f"Invalid departure_date format: {departure_date}")
+                    raise ValueError(f"Invalid departure_date format: {departure_date}")
+                
+                if return_date and not re.match(r'^\d{4}-\d{2}-\d{2}$', return_date):
+                    logger.error(f"Invalid return_date format: {return_date}")
+                    raise ValueError(f"Invalid return_date format: {return_date}")
+                
+                logger.info(f"Calling Ancileo API - departure={departure_date}, return={return_date}, arrival_country={arrival_country}, arrival_airport={arrival_airport}")
+                
+                # Call Ancileo API with insureds array (preferred) or age counts
                 quote_result = await ancileo.get_quote(
                     market=departure_country,
                     departure_date=departure_date,
                     return_date=return_date,
                     departure_country=departure_country,
                     arrival_country=arrival_country,
-                    departure_airport=None,  # Will auto-map
-                    arrival_airport=None,  # Will auto-map
-                    adults_count=adults_count,
-                    children_count=children_count,
-                    trip_type="RT"
+                    departure_airport="SIN",  # Singapore departure
+                    arrival_airport=arrival_airport,  # Use extracted airport (e.g., CJB for Coimbatore)
+                    adults_count=adults_count if not insureds_list else 0,  # Age counts optional if insureds provided
+                    children_count=children_count if not insureds_list else 0,
+                    trip_type="RT" if return_date else "ST",
+                    insureds=insureds_list if insureds_list else None  # Pass insureds with DOB
                 )
                 
                 if quote_result.get("success"):
                     ancileo_quote_id = quote_result.get("quote_id")
                     ancileo_policies = quote_result.get("policies", [])
-                    # Store Ancileo prices for cost calculation
-                    ancileo_prices = {p.get("product_code"): p.get("price", 0) for p in ancileo_policies if p.get("product_code")}
-                    ancileo_currencies = {p.get("product_code"): p.get("currency", "SGD") for p in ancileo_policies if p.get("currency")}
                     
-                    logger.info(f"Got {len(ancileo_policies)} Ancileo policies for pricing")
+                    if ancileo_policies and len(ancileo_policies) > 0:
+                        logger.info(f"✅ PRIMARY: Got {len(ancileo_policies)} quotes from Ancileo API - showing only the recommended one")
+                        
+                        # PRIMARY: Only show the first/recommended Ancileo policy
+                        ancileo_policy = ancileo_policies[0]
+                        
+                        # Map Ancileo product name to local policy name for details lookup
+                        policy_name_mapping = {
+                            "Scootsurance - Travel Insurance": "Scootsurance",
+                            "Scootsurance": "Scootsurance",
+                            "MHInsure Travel": "MHInsure Travel",
+                            "INTERNATIONAL TRAVEL": "INTERNATIONAL TRAVEL"
+                        }
+                        
+                        # Normalize policy name to match local taxonomy
+                        ancileo_product_name = ancileo_policy.get("product_name", "")
+                        base_policy_name = policy_name_mapping.get(ancileo_product_name, ancileo_product_name.split(" - ")[0].strip())
+                        
+                        # Build quote with Ancileo data and local policy name mapping
+                        quote = {
+                            "plan_name": ancileo_product_name,  # Keep original Ancileo name for display
+                            "product_code": ancileo_policy.get("product_code", ""),
+                            "price": round(ancileo_policy.get("price", 0), 2),
+                            "currency": ancileo_policy.get("currency", "SGD"),
+                            "offer_id": ancileo_policy.get("offer_id", ""),
+                            "quote_id": ancileo_quote_id,
+                            "source": "ancileo",
+                            "description": ancileo_policy.get("description", ""),
+                            "benefits_html": ancileo_policy.get("benefits_html", ""),
+                            "image_url": ancileo_policy.get("image_url"),
+                            "score": 100,  # Ancileo quotes are real policies
+                            "recommended_for": ancileo_policy.get("description", "Travel protection"),
+                            "local_policy_name": base_policy_name  # Store local policy name for details lookup
+                        }
+                        
+                        logger.info(f"✅ Showing only recommended Ancileo policy: {quote['plan_name']} - ${quote['price']} {quote['currency']} (maps to local: {base_policy_name})")
+                        
+                        final_quotes = [quote]  # Only return the first/recommended policy
+                        
+                        # Return single Ancileo quote (local details will be fetched on demand via /api/policy/details)
+                        trip_details_obj = {
+                            "destination": trip_data["destination"],
+                            "source": trip_data.get("source"),
+                            "departure_date": trip_data["departure_date"],
+                            "return_date": trip_data["return_date"],
+                            "travelers": trip_data["pax"],
+                            "ages": request.get("ages", []),
+                            "activities": request.get("activities", []),
+                            "trip_cost": request.get("trip_cost")
+                        }
+                        
+                        from datetime import datetime
+                        return {
+                            "success": True,
+                            "source": "ancileo",
+                            "quote_id": ancileo_quote_id,
+                            "quotes": final_quotes,
+                            "trip_details": trip_details_obj,
+                            "matching_method": "Ancileo API (Primary Source)",
+                            "generated_at": datetime.now().isoformat()
+                        }
+                    else:
+                        logger.warning("Ancileo API returned success but no policies - falling back to taxonomy")
+                else:
+                    logger.warning(f"Ancileo API failed: {quote_result.get('error', 'Unknown error')} - falling back to taxonomy")
             except Exception as e:
-                logger.error(f"Ancileo API pricing failed: {e}", exc_info=True)
+                logger.error(f"Ancileo API call failed: {e}", exc_info=True)
+                logger.warning("Falling back to taxonomy matching")
     except ImportError:
-        logger.warning("Ancileo API not available")
+        logger.warning("Ancileo API not available - using taxonomy matching")
     except Exception as e:
-        logger.error(f"Ancileo API initialization failed: {e}")
+        logger.error(f"Ancileo API initialization failed: {e} - using taxonomy matching")
     
-    # STEP 3: Combine matched policies with Ancileo prices
+    # STEP 2: FALLBACK - Use taxonomy matching if Ancileo failed
+    logger.info("🔄 FALLBACK: Using taxonomy matching for quotes")
+    matched_policies = []
+    try:
+        matched_policies = await taxonomy_matcher.match_policies(
+            user_data=user_data,
+            trip_data=trip_data,
+            extracted_data=extracted_data
+        )
+        logger.info(f"✅ Matched {len(matched_policies)} applicable policies from taxonomy")
+    except Exception as e:
+        logger.error(f"Taxonomy matching failed: {e}", exc_info=True)
+        matched_policies = []
+    
+    if not matched_policies or len(matched_policies) == 0:
+        logger.warning("No applicable policies found from taxonomy matching")
+        return {
+            "success": True,
+            "source": "taxonomy_match",
+            "quotes": [],
+            "trip_details": {
+                "destination": trip_data.get("destination"),
+                "source": trip_data.get("source"),
+                "departure_date": trip_data.get("departure_date"),
+                "return_date": trip_data.get("return_date"),
+                "travelers": trip_data.get("pax", 1)
+            },
+            "message": "No insurance policies found. Please adjust your search criteria."
+        }
+    
+    # Build quotes from taxonomy matches (without Ancileo prices since API failed)
     final_quotes = []
-    logger.info(f"Processing {len(matched_policies)} matched policies into quotes")
-    
     for matched in matched_policies:
-        policy_name = matched["policy_name"]
-        product_code = matched["product_code"]
-        
-        # Get price from Ancileo if available, otherwise calculate default pricing based on trip
-        # Default pricing: base price * duration * travelers
-        base_price = 5.0  # SGD per day per person
-        if not ancileo_prices.get(product_code):
-            # Calculate trip duration
-            try:
-                from datetime import datetime
-                dep = datetime.strptime(trip_data["departure_date"], "%Y-%m-%d")
-                ret = datetime.strptime(trip_data["return_date"], "%Y-%m-%d")
-                duration = (ret - dep).days
-                price = base_price * duration * trip_data["pax"]
-                # Adjust price based on policy type
-                if "Pre-Ex" in policy_name:
-                    price *= 1.2  # Pre-existing conditions policy costs more
-                elif "Scootsurance" in policy_name:
-                    price *= 0.9  # Scootsurance is typically cheaper
-            except:
-                price = 50.0  # Fallback
-        else:
-            price = ancileo_prices.get(product_code, 50.0)
-        currency = ancileo_currencies.get(product_code, "SGD")
-        
-        # Get benefits from taxonomy
-        benefits = taxonomy_matcher.get_policy_benefits(product_code)
-        
-        # Build quote from matched policy - use actual policy name from taxonomy
         quote = {
-            "plan_name": policy_name,
-            "product_code": product_code,
-            "price": round(price, 2),
-            "currency": currency,
+            "plan_name": matched["policy_name"],
+            "product_code": matched["product_code"],
+            "price": 0,  # No price available from Ancileo
+            "currency": "SGD",
             "score": matched["score"],
             "benefits": matched["benefits"],
             "reasons": matched["reasons"],
-            "taxonomy_benefits": benefits,
             "recommended_for": f"Score: {matched['score']}/100 - {', '.join(matched['reasons'][:2])}",
             "source": "taxonomy_match",
-            "cost_source": "ancileo" if ancileo_quote_id and ancileo_prices.get(product_code) else "calculated"
+            "cost_source": "not_available"
         }
         final_quotes.append(quote)
-        logger.info(f"Added quote: {policy_name} (${quote['price']} {currency}, Score: {matched['score']}/100)")
     
-    # Sort by score (highest first) - best matches first
     final_quotes.sort(key=lambda x: x["score"], reverse=True)
     
-    # Log final quotes
-    logger.info(f"✅ Returning {len(final_quotes)} applicable policies from taxonomy:")
-    for q in final_quotes:
-        logger.info(f"   - {q['plan_name']} (Score: {q.get('score', 'N/A')}/100, Price: ${q.get('price', 'N/A')} {q.get('currency', 'SGD')})")
-    
-    # Get trip details
     trip_details_obj = {
         "destination": trip_data["destination"],
         "source": trip_data.get("source"),
@@ -1483,15 +1758,14 @@ async def generate_quote(request: dict):
         "trip_cost": request.get("trip_cost")
     }
     
-    # Build response - simple and clean
     from datetime import datetime
     return {
         "success": True,
         "source": "taxonomy_match",
-        "quote_id": ancileo_quote_id or f"quote_{datetime.now().strftime('%Y%m%d%H%M%S')}",
+        "quote_id": f"quote_{datetime.now().strftime('%Y%m%d%H%M%S')}",
         "quotes": final_quotes,
         "trip_details": trip_details_obj,
-        "matching_method": "JSON Taxonomy Matching (Ancileo for costs only)",
+        "matching_method": "Taxonomy Matching (Fallback - Ancileo unavailable)",
         "generated_at": datetime.now().isoformat()
     }
 
