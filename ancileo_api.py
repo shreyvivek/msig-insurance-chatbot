@@ -686,7 +686,7 @@ class AncileoAPI:
                 
                 headers = {
                     "Content-Type": "application/json",
-                    "X-Api-Key": api_key  # Use the product-specific API key
+                    "x-api-key": api_key  # Use lowercase as per Ancileo API documentation
                 }
                 
                 response = await client.post(
@@ -700,15 +700,26 @@ class AncileoAPI:
                 if response.status_code == 200:
                     data = response.json()
                     logger.info("Successfully processed purchase through Ancileo API")
+                    logger.info(f"Ancileo Purchase Response: {json.dumps(data, indent=2, default=str)}")
                     
                     # Extract purchase details according to API docs
                     purchase_id = data.get("id")
                     purchased_offers = data.get("purchasedOffers", [])
                     
                     # Get policy number from first purchased offer
+                    # Policy number could be in purchasedOfferId or policyNumber field
                     policy_number = None
                     if purchased_offers and len(purchased_offers) > 0:
-                        policy_number = purchased_offers[0].get("purchasedOfferId")
+                        policy_number = (
+                            purchased_offers[0].get("purchasedOfferId") or 
+                            purchased_offers[0].get("policyNumber") or
+                            purchased_offers[0].get("policy_id") or
+                            purchase_id  # Fallback to purchase ID
+                        )
+                    
+                    # If still no policy number, try other locations in response
+                    if not policy_number:
+                        policy_number = data.get("policyNumber") or data.get("policy_id") or purchase_id
                     
                     return {
                         "success": True,

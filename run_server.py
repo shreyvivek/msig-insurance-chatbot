@@ -2364,13 +2364,33 @@ async def purchase_ancileo_policy(request: dict):
                 "phoneNumber": request.get("phone") or first_insured.get("phone") or first_insured.get("phoneNumber", "")
             }
         
-        # Ensure main_contact has required fields
-        if not main_contact or not main_contact.get("email"):
+        # Ensure main_contact has all required fields (including address fields as per Ancileo API)
+        if not main_contact:
             return {
                 "success": False,
-                "error": "main_contact with email is required",
-                "message": "Please provide main_contact structure with email and phoneNumber"
+                "error": "main_contact is required",
+                "message": "Please provide main_contact structure"
             }
+        
+        # Ensure main_contact has required fields with defaults
+        if not main_contact.get("email"):
+            return {
+                "success": False,
+                "error": "main_contact email is required",
+                "message": "Please provide main_contact with email"
+            }
+        
+        # Add missing address fields if not provided (required by Ancileo API)
+        if not main_contact.get("address"):
+            main_contact["address"] = "123 Test Street"
+        if not main_contact.get("city"):
+            main_contact["city"] = "Singapore"
+        if not main_contact.get("zipCode"):
+            main_contact["zipCode"] = main_contact.get("zip_code") or "123456"
+        if not main_contact.get("countryCode"):
+            main_contact["countryCode"] = main_contact.get("country_code") or "SG"
+        if not main_contact.get("phoneType"):
+            main_contact["phoneType"] = "mobile"
         
         result = await ancileo.purchase_policy(
             quote_id=request.get("quote_id"),
@@ -2387,7 +2407,9 @@ async def purchase_ancileo_policy(request: dict):
             partner_reference=request.get("partner_reference") or request.get("partnerReference"),
             options=request.get("options"),
             market=request.get("market", "SG"),
-            language_code=request.get("language_code", "en")
+            language_code=request.get("language_code", "en"),
+            product_name=request.get("product_name"),
+            is_send_email=request.get("is_send_email", True)
         )
         return result
     except Exception as e:
