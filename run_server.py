@@ -364,41 +364,41 @@ CRITICAL INSTRUCTION:
         if is_pricing_question and context_data.get("quotes"):
             quotes = context_data.get("quotes", [])
             trip_details = context_data.get("trip_details", {})
+        
+        # Find the quote being asked about (usually the first/most recent)
+        target_quote = quotes[0] if quotes else None
+        
+        if target_quote and trip_details:
+            # Calculate and explain pricing
+            breakdown = pricing_calculator.calculate_price_breakdown(
+                price=target_quote.get("price", 0),
+                destination=trip_details.get("destination", ""),
+                departure_date=trip_details.get("departure_date", ""),
+                return_date=trip_details.get("return_date", ""),
+                travelers=trip_details.get("travelers", 1),
+                ages=trip_details.get("ages", []),
+                trip_cost=trip_details.get("trip_cost"),
+                policy_name=target_quote.get("plan_name"),
+                source=target_quote.get("source", "ancileo")
+            )
             
-            # Find the quote being asked about (usually the first/most recent)
-            target_quote = quotes[0] if quotes else None
+            explanation = pricing_calculator.explain_price(target_quote, trip_details)
             
-            if target_quote and trip_details:
-                # Calculate and explain pricing
-                breakdown = pricing_calculator.calculate_price_breakdown(
-                    price=target_quote.get("price", 0),
-                    destination=trip_details.get("destination", ""),
-                    departure_date=trip_details.get("departure_date", ""),
-                    return_date=trip_details.get("return_date", ""),
-                    travelers=trip_details.get("travelers", 1),
-                    ages=trip_details.get("ages", []),
-                    trip_cost=trip_details.get("trip_cost"),
-                    policy_name=target_quote.get("plan_name"),
-                    source=target_quote.get("source", "ancileo")
-                )
-                
-                explanation = pricing_calculator.explain_price(target_quote, trip_details)
-                
-                # Get conversational response but inject pricing explanation
-                result = await conversation.handle_question(
-                    question=request.get("question"),
-                    language=request.get("language"),
-                    context=f"{enhanced_context if enhanced_context else request.get('context', '')}\n\nPRICING BREAKDOWN DATA:\n{explanation}\n\nUse this specific pricing breakdown to answer the user's question about pricing calculation. Be specific and explain the numbers.",
-                    user_id=user_id,
-                    is_voice=request.get("is_voice", False),
-                    role=request.get("role")
-                )
-                
-                # Ensure pricing explanation is included
-                if result.get("answer"):
-                    result["answer"] = f"{explanation}\n\n{result['answer']}"
-                
-                return result
+            # Get conversational response but inject pricing explanation
+            result = await conversation.handle_question(
+                question=request.get("question"),
+                language=request.get("language"),
+                context=f"{enhanced_context if enhanced_context else request.get('context', '')}\n\nPRICING BREAKDOWN DATA:\n{explanation}\n\nUse this specific pricing breakdown to answer the user's question about pricing calculation. Be specific and explain the numbers.",
+                user_id=user_id,
+                is_voice=request.get("is_voice", False),
+                role=request.get("role")
+            )
+            
+            # Ensure pricing explanation is included
+            if result.get("answer"):
+                result["answer"] = f"{explanation}\n\n{result['answer']}"
+            
+            return result
         
         # If best policy question and we have quotes, use scoring algorithm
         if is_best_question and context_data.get("quotes"):
@@ -668,26 +668,59 @@ The AI will use the user's purchased insurance information (if available) to pro
         
         if purchased_insurance and isinstance(purchased_insurance, dict) and len(purchased_insurance) > 0:
             user_context += "\n\n🛡️ PURCHASED INSURANCE:\n"
-            if purchased_insurance.get("plan_name"):
-                user_context += f"- Policy: **{purchased_insurance.get('plan_name')}**\n"
-            if purchased_insurance.get("policy_number"):
-                user_context += f"- Policy Number: {purchased_insurance.get('policy_number')}\n"
-            if purchased_insurance.get("purchase_date"):
-                user_context += f"- Purchase Date: {purchased_insurance.get('purchase_date')}\n"
+            # Extract plan_name as string - handle both string and object cases
+            plan_name = purchased_insurance.get("plan_name")
+            if plan_name:
+                # Convert to string if it's an object
+                if isinstance(plan_name, dict):
+                    plan_name = plan_name.get("name") or plan_name.get("plan_name") or str(plan_name)
+                elif not isinstance(plan_name, str):
+                    plan_name = str(plan_name)
+                # Clean up the policy name
+                plan_name = str(plan_name).strip()
+                if plan_name and plan_name != "None" and plan_name.lower() != "null":
+                    user_context += f"- Policy: **{plan_name}**\n"
+                    # Also add a note for the AI to use this exact name
+                    user_context += f"- IMPORTANT: When referencing this policy in your response, use the exact policy name string: \"{plan_name}\" (NOT [object Object], NOT objects, ONLY the string name like \"INTERNATIONAL TRAVEL\" or \"Scootsurance\")\n"
+            
+            policy_number = purchased_insurance.get("policy_number")
+            if policy_number:
+                policy_number = str(policy_number).strip() if isinstance(policy_number, str) else str(policy_number)
+                if policy_number and policy_number != "None" and policy_number.lower() != "null":
+                    user_context += f"- Policy Number: {policy_number}\n"
+            
+            purchase_date = purchased_insurance.get("purchase_date")
+            if purchase_date:
+                purchase_date = str(purchase_date).strip() if isinstance(purchase_date, str) else str(purchase_date)
+                if purchase_date and purchase_date != "None" and purchase_date.lower() != "null":
+                    user_context += f"- Purchase Date: {purchase_date}\n"
+            
             if purchased_insurance.get("trip_details"):
                 trip = purchased_insurance.get("trip_details", {})
-                if trip.get("destination"):
-                    user_context += f"- Trip Destination: {trip.get('destination')}\n"
-                if trip.get("departure_date"):
-                    user_context += f"- Departure: {trip.get('departure_date')}\n"
-                if trip.get("return_date"):
-                    user_context += f"- Return: {trip.get('return_date')}\n"
+                if isinstance(trip, dict):
+                    destination = trip.get("destination")
+                    if destination:
+                        destination = str(destination).strip() if isinstance(destination, str) else str(destination)
+                        if destination and destination != "None":
+                            user_context += f"- Trip Destination: {destination}\n"
+                    departure = trip.get("departure_date")
+                    if departure:
+                        departure = str(departure).strip() if isinstance(departure, str) else str(departure)
+                        if departure and departure != "None":
+                            user_context += f"- Departure: {departure}\n"
+                    return_date = trip.get("return_date")
+                    if return_date:
+                        return_date = str(return_date).strip() if isinstance(return_date, str) else str(return_date)
+                        if return_date and return_date != "None":
+                            user_context += f"- Return: {return_date}\n"
+            
             if purchased_insurance.get("insureds"):
                 insured_names = []
                 for insured in purchased_insurance.get("insureds", []):
-                    name = insured.get("name") or f"{insured.get('firstName', '')} {insured.get('lastName', '')}".strip()
-                    if name:
-                        insured_names.append(name)
+                    if isinstance(insured, dict):
+                        name = insured.get("name") or f"{insured.get('firstName', '')} {insured.get('lastName', '')}".strip()
+                        if name:
+                            insured_names.append(str(name))
                 if insured_names:
                     user_context += f"- Insured Travelers: {', '.join(insured_names)}\n"
         

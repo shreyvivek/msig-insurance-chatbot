@@ -252,3 +252,4 @@ class UserProfileManager:
         
         return enriched
 
+

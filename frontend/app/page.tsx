@@ -427,7 +427,10 @@ function PolicyDetailsDisplay({ details }: { details: string }) {
       {/* Coverage Highlights */}
       {parsed.coverageHighlights && parsed.coverageHighlights.length > 0 && (
         <div className="animate-slide-down" style={{ animationDelay: '100ms' }}>
-          <div className="bg-gradient-to-r from-green-900/30 via-emerald-900/30 to-teal-900/30 rounded-xl p-5 border border-green-500/30 hover:border-green-400/50 transition-all duration-300 hover:shadow-lg hover:shadow-green-500/20">
+          <div 
+            data-policy-section="5"
+            className="bg-gradient-to-r from-green-900/30 via-emerald-900/30 to-teal-900/30 rounded-xl p-5 border border-green-500/30 hover:border-green-400/50 transition-all duration-300 hover:shadow-lg hover:shadow-green-500/20"
+          >
             <div className="flex items-center gap-2 mb-4">
               <div className="w-1 h-6 bg-gradient-to-b from-green-400 to-emerald-400 rounded-full animate-pulse"></div>
               <h4 className="text-lg font-bold text-green-300 flex items-center gap-2">
@@ -467,7 +470,10 @@ function PolicyDetailsDisplay({ details }: { details: string }) {
       {/* Key Exclusions */}
       {parsed.keyExclusions && parsed.keyExclusions.length > 0 && (
         <div className="animate-slide-down" style={{ animationDelay: '300ms' }}>
-          <div className="bg-gradient-to-r from-amber-900/30 via-orange-900/30 to-red-900/30 rounded-xl p-5 border border-amber-500/30 hover:border-amber-400/50 transition-all duration-300 hover:shadow-lg hover:shadow-amber-500/20">
+          <div 
+            data-policy-section="8"
+            className="bg-gradient-to-r from-amber-900/30 via-orange-900/30 to-red-900/30 rounded-xl p-5 border border-amber-500/30 hover:border-amber-400/50 transition-all duration-300 hover:shadow-lg hover:shadow-amber-500/20"
+          >
             <div className="flex items-center gap-2 mb-4">
               <div className="w-1 h-6 bg-gradient-to-b from-amber-400 to-orange-400 rounded-full"></div>
               <h4 className="text-lg font-bold text-amber-300 flex items-center gap-2">
@@ -1872,9 +1878,192 @@ function PurchaseSuccessDisplay({ message }: { message: any }) {
   )
 }
 
+// Beautiful Policy Response Formatter with animations
+function PolicyResponseFormatter({ content, onPolicyClick }: { content: string; onPolicyClick?: (policyName: string, section?: string) => void }) {
+  // Sanitize content first to remove [object Object] - use a placeholder since we don't have quotes here
+  const sanitizedContent = content.replace(/\[object Object\]/g, (match, offset, string) => {
+    // Try to find policy name in surrounding context
+    const before = string.substring(Math.max(0, offset - 50), offset)
+    const after = string.substring(offset + match.length, Math.min(string.length, offset + match.length + 50))
+    
+    // Check if there's a policy name mentioned nearby
+    const policyMatch = (before + after).match(/(?:INTERNATIONAL TRAVEL|MHInsure Travel|Scootsurance|MSIG)/i)
+    if (policyMatch) {
+      return policyMatch[0]
+    }
+    
+    return 'this policy'
+  })
+  
+  // Detect if content contains policy citations and structured information
+  const hasPolicyCitations = /\[Policy:[^\]]+\]/gi.test(sanitizedContent)
+  const hasStructuredInfo = sanitizedContent.includes('Section') || sanitizedContent.includes('policy number') || sanitizedContent.includes('cooling-off')
+  
+  if (!hasPolicyCitations && !hasStructuredInfo) {
+    return null // Not a policy response, use default formatting
+  }
+  
+  // Parse policy citations: [Policy: NAME, Section X]
+  const policyCitationRegex = /\[Policy:\s*([^,]+)(?:,\s*Section\s*([^\]]+))?\]/gi
+  const citations: Array<{ policy: string; section?: string; full: string }> = []
+  let match
+  while ((match = policyCitationRegex.exec(sanitizedContent)) !== null) {
+    citations.push({
+      policy: match[1].trim(),
+      section: match[2]?.trim(),
+      full: match[0]
+    })
+  }
+  
+  // Split content into paragraphs
+  const paragraphs = sanitizedContent.split(/\n\n+/).filter(p => p.trim())
+  
+  return (
+    <div className="space-y-5 my-4">
+      {paragraphs.map((para, idx) => {
+        // Check if paragraph contains policy citation
+        const hasCitation = /\[Policy:[^\]]+\]/gi.test(para)
+        const isImportant = para.includes('cancellation') || para.includes('refund') || para.includes('cooling-off') || para.includes('contact')
+        
+        if (hasCitation) {
+              // Format paragraph with policy citation - parse properly
+              const parts: Array<{ type: 'text' | 'citation'; content: string; citation?: { policy: string; section?: string } }> = []
+              let lastIndex = 0
+              const citationRegex = /\[Policy:\s*([^,]+)(?:,\s*Section\s*([^\]]+))?\]/gi
+              let match
+              
+              while ((match = citationRegex.exec(para)) !== null) {
+                if (match.index > lastIndex) {
+                  parts.push({ type: 'text', content: para.substring(lastIndex, match.index) })
+                }
+                parts.push({
+                  type: 'citation',
+                  content: match[0],
+                  citation: {
+                    policy: match[1].trim(),
+                    section: match[2]?.trim()
+                  }
+                })
+                lastIndex = match.index + match[0].length
+              }
+              
+              if (lastIndex < para.length) {
+                parts.push({ type: 'text', content: para.substring(lastIndex) })
+              }
+              
+              if (parts.length === 0) {
+                parts.push({ type: 'text', content: para })
+              }
+              
+              return (
+                <div 
+                  key={idx}
+                  className="bg-gradient-to-r from-purple-900/30 via-blue-900/30 to-indigo-900/30 rounded-xl p-5 border border-purple-500/30 hover:border-purple-400/50 transition-all duration-300 animate-slide-down shadow-lg shadow-purple-500/10"
+                  style={{ animationDelay: `${idx * 100}ms` }}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="w-1 h-auto bg-gradient-to-b from-purple-400 via-blue-400 to-indigo-400 rounded-full flex-shrink-0" style={{ minHeight: '100%' }}></div>
+                    <div className="flex-1">
+                      <p className="text-gray-200 leading-relaxed text-[15px]">
+                        {parts.map((part, partIdx) => (
+                          <span key={partIdx}>
+                            {part.type === 'text' ? part.content : (
+                              part.citation && (
+                                <button
+                                  onClick={() => {
+                                    if (onPolicyClick) {
+                                      onPolicyClick(part.citation.policy, part.citation.section)
+                                    }
+                                  }}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600/50 via-blue-600/50 to-indigo-600/50 border border-purple-500/60 rounded-lg text-purple-200 font-semibold text-sm mx-1.5 my-1 animate-pulse hover:scale-105 hover:bg-gradient-to-r hover:from-purple-600/70 hover:via-blue-600/70 hover:to-indigo-600/70 transition-all shadow-lg shadow-purple-500/20 cursor-pointer"
+                                  title={`Click to view ${part.citation?.policy || ''}${part.citation?.section ? `, Section ${part.citation.section}` : ''}`}
+                                >
+                                  <Sparkles className="w-3.5 h-3.5 text-purple-300" />
+                                  Policy: {part.citation?.policy || ''}{part.citation?.section ? `, Section ${part.citation.section}` : ''}
+                                </button>
+                              )
+                            )}
+                          </span>
+                        ))}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )
+        }
+        
+        if (isImportant) {
+          // Sanitize para text to remove [object Object] in orange boxes
+          const sanitizedPara = para.replace(/\[object Object\]/g, (match, offset, string) => {
+            // Try to find policy name in surrounding context
+            const before = string.substring(Math.max(0, offset - 50), offset)
+            const after = string.substring(offset + match.length, Math.min(string.length, offset + match.length + 50))
+            const policyMatch = (before + after).match(/(?:INTERNATIONAL TRAVEL|MHInsure Travel|Scootsurance|MSIG)/i)
+            return policyMatch ? policyMatch[0] : 'this policy'
+          })
+          
+          return (
+            <div 
+              key={idx}
+              className="bg-gradient-to-r from-amber-900/20 via-orange-900/20 to-yellow-900/20 rounded-lg p-4 border border-amber-500/30 hover:border-amber-400/50 transition-all duration-300 animate-slide-right"
+              style={{ animationDelay: `${idx * 100}ms` }}
+            >
+              <div className="flex items-start gap-3">
+                <span className="text-amber-400 text-xl mt-1">💡</span>
+                <p className="text-gray-200 leading-relaxed text-[15px] flex-1">{sanitizedPara}</p>
+              </div>
+            </div>
+          )
+        }
+        
+        return (
+          <p 
+            key={idx}
+            className="text-gray-200 leading-relaxed text-[15px] animate-fade-in"
+            style={{ animationDelay: `${idx * 50}ms` }}
+          >
+            {para}
+          </p>
+        )
+      })}
+    </div>
+  )
+}
+
+// Sanitize text to remove [object Object] and replace with actual policy names
+function sanitizePolicyText(text: string, quotes?: any[]): string {
+  // Replace [object Object] with actual policy names if available
+  if (text.includes('[object Object]') && quotes && quotes.length > 0) {
+    // Extract policy names from quotes
+    const policyNames = quotes.map(q => {
+      if (typeof q === 'string') return q
+      return q.plan_name || q.name || 'the policy'
+    }).filter(Boolean)
+    
+    // Replace [object Object] occurrences with policy names
+    let sanitized = text
+    policyNames.forEach((name, idx) => {
+      const cleanName = cleanPolicyName(String(name))
+      // Replace first occurrence with first policy, second with second, etc.
+      sanitized = sanitized.replace(/\[object Object\]/, cleanName)
+    })
+    
+    // Replace any remaining [object Object] with generic terms
+    sanitized = sanitized.replace(/\[object Object\]/g, 'this policy')
+    
+    return sanitized
+  }
+  
+  // Remove any remaining [object Object] even if no quotes available
+  return text.replace(/\[object Object\]/g, 'this policy')
+}
+
 // Enhanced Message Renderer with cards
 function EnhancedMarkdown({ content, quotes, language = 'en', message }: { content: string; quotes?: any[]; language?: string; message?: any }) {
   const [selectedPolicy, setSelectedPolicy] = useState<any | null>(null)
+  
+  // Sanitize content to remove [object Object]
+  const sanitizedContent = sanitizePolicyText(content, quotes)
   
   // UI Translations
   const translations = {
@@ -1918,11 +2107,126 @@ function EnhancedMarkdown({ content, quotes, language = 'en', message }: { conte
       {!isTripDetailsMessage && !isPurchaseSuccess && (
       <ReactMarkdown
         components={{
-          p: ({ children }) => (
-            <p className="mb-4 text-gray-200 leading-relaxed font-normal text-[15px]">
+          p: ({ children }) => {
+            let text = String(children)
+            // Sanitize text to remove [object Object] before processing
+            text = sanitizePolicyText(text, quotes)
+            const hasPolicyCitation = /\[Policy:[^\]]+\]/gi.test(text)
+            const isImportant = text.includes('cancellation') || text.includes('refund') || text.includes('cooling-off') || text.includes('contact')
+            
+            if (hasPolicyCitation || isImportant) {
+              // Format policy citations with beautiful styling
+              let formattedText = text
+              
+              // Replace policy citations with styled components
+              formattedText = formattedText.replace(
+                /\[Policy:\s*([^,]+)(?:,\s*Section\s*([^\]]+))?\]/gi,
+                (match, policy, section) => {
+                  return `[Policy: ${policy}${section ? `, Section ${section}` : ''}]`
+                }
+              )
+              
+              return (
+                <div 
+                  className={`mb-5 rounded-xl p-5 border transition-all duration-300 animate-slide-down ${
+                    hasPolicyCitation 
+                      ? 'bg-gradient-to-r from-purple-900/30 via-blue-900/30 to-indigo-900/30 border-purple-500/30 hover:border-purple-400/50' 
+                      : 'bg-gradient-to-r from-amber-900/20 via-orange-900/20 to-yellow-900/20 border-amber-500/30 hover:border-amber-400/50'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={`w-1 h-full rounded-full flex-shrink-0 mt-1 ${
+                      hasPolicyCitation 
+                        ? 'bg-gradient-to-b from-purple-400 to-blue-400' 
+                        : 'bg-gradient-to-b from-amber-400 to-orange-400'
+                    }`}></div>
+                    <div className="flex-1">
+                      <p className="text-gray-200 leading-relaxed font-normal text-[15px]">
+                        {(() => {
+                          // Parse text and citations properly
+                          const parts: Array<{ text: string; citation?: { policy: string; section?: string } }> = []
+                          const citationRegex = /\[Policy:\s*([^,]+)(?:,\s*Section\s*([^\]]+))?\]/gi
+                          let lastIndex = 0
+                          let match
+                          
+                          while ((match = citationRegex.exec(text)) !== null) {
+                            if (match.index > lastIndex) {
+                              parts.push({ text: text.substring(lastIndex, match.index) })
+                            }
+                            parts.push({
+                              text: '',
+                              citation: {
+                                policy: match[1].trim(),
+                                section: match[2]?.trim()
+                              }
+                            })
+                            lastIndex = match.index + match[0].length
+                          }
+                          
+                          if (lastIndex < text.length) {
+                            parts.push({ text: text.substring(lastIndex) })
+                          }
+                          
+                          if (parts.length === 0) {
+                            parts.push({ text })
+                          }
+                          
+                          return parts.map((part, idx) => (
+                            <span key={idx}>
+                              {part.text}
+                              {part.citation && (
+                                <button
+                                  onClick={() => {
+                                    // Open policy modal and scroll to section
+                                    const policyName = part.citation.policy
+                                    const section = part.citation.section
+                                    setSelectedPolicy({
+                                      name: policyName,
+                                      isAncileo: true,
+                                      section: section
+                                    })
+                                    // Scroll to policy modal after a brief delay
+                                    setTimeout(() => {
+                                      const modal = document.querySelector('[data-policy-modal]')
+                                      if (modal) {
+                                        modal.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                                        // If section is specified, try to scroll to it within the modal
+                                        if (section) {
+                                          setTimeout(() => {
+                                            const sectionElement = document.querySelector(`[data-policy-section="${section}"]`)
+                                            if (sectionElement) {
+                                              sectionElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                                              sectionElement.classList.add('highlight-section')
+                                              setTimeout(() => sectionElement.classList.remove('highlight-section'), 2000)
+                                            }
+                                          }, 300)
+                                        }
+                                      }
+                                    }, 100)
+                                  }}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600/50 via-blue-600/50 to-indigo-600/50 border border-purple-500/60 rounded-lg text-purple-200 font-semibold text-sm mx-1.5 my-1 animate-pulse hover:scale-105 hover:bg-gradient-to-r hover:from-purple-600/70 hover:via-blue-600/70 hover:to-indigo-600/70 transition-all shadow-lg shadow-purple-500/20 cursor-pointer"
+                                  title={`Click to view ${part.citation.policy}${part.citation.section ? `, Section ${part.citation.section}` : ''}`}
+                                >
+                                  <Sparkles className="w-3.5 h-3.5 text-purple-300" />
+                                  Policy: {part.citation.policy}{part.citation.section ? `, Section ${part.citation.section}` : ''}
+                                </button>
+                              )}
+                            </span>
+                          ))
+                        })()}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )
+            }
+            
+            return (
+              <p className="mb-4 text-gray-200 leading-relaxed font-normal text-[15px] animate-fade-in">
               {children}
             </p>
-          ),
+            )
+          },
           strong: ({ children }) => {
             const text = String(children)
             const policyMatch = text.match(/(INTERNATIONAL TRAVEL|MHInsure Travel|Scootsurance|MSIG|Policy:?\s*[^\]\s]+)/i)
@@ -2535,11 +2839,12 @@ export default function Home() {
     if (typeof window !== 'undefined') {
       // Declare function globally
       (window as any).loadGoogleTranslate = function() {
-        if (typeof google !== 'undefined' && google.translate && google.translate.TranslateElement) {
-          new google.translate.TranslateElement({
+        const googleTranslate = (window as any).google?.translate
+        if (googleTranslate && googleTranslate.TranslateElement) {
+          new googleTranslate.TranslateElement({
             pageLanguage: 'en',
             includedLanguages: 'en,ta,zh-CN,ms-MY',
-            layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
+            layout: googleTranslate.TranslateElement.InlineLayout.SIMPLE,
             autoDisplay: false
           }, 'google_translate_element');
         }

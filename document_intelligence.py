@@ -108,7 +108,9 @@ Look carefully for ANY of these details:
 - Trip costs/prices
 - Destination cities or countries
 
-CRITICAL: Extract information for ALL passengers. If you see multiple passenger names, create a traveler entry for each one. The travelers array MUST have the same number of entries as the pax count. Extract one traveler object for each passenger.
+CRITICAL: Extract information for ALL passengers. 
+If you see multiple passenger names, create a traveler entry for each one. 
+The travelers array MUST have the same number of entries as the pax count. Extract one traveler object for each passenger.
 
 Return as JSON with these fields. Use null for fields you cannot see at all:
 {{
@@ -145,7 +147,8 @@ Return as JSON with these fields. Use null for fields you cannot see at all:
     "additional_info": "any other relevant information you see"
 }}
 
-CRITICAL: Extract ANY information you can see, even if incomplete. If you see a destination but not dates, still return the destination. If you see dates but not destination, return the dates. Partial extraction is acceptable."""
+CRITICAL: Extract ANY information you can see, even if incomplete. If you see a destination but not dates, still return the destination. 
+If you see dates but not destination, return the dates. Partial extraction is acceptable."""
             else:
                 # Use Groq to extract structured information with focus on insurance-relevant data
                 extraction_prompt = f"""Extract travel insurance-relevant information from this {document_type.upper()} document:
@@ -164,7 +167,9 @@ Look for:
 - Traveler ages, email addresses, phone numbers, dates of birth (if visible for each passenger)
 - Ticket policies/booking policies mentioned
 
-CRITICAL: Extract separate traveler entries for EACH passenger. If you see 2 names, create 2 traveler objects. If you see 3 names, create 3 traveler objects. The travelers array MUST have exactly the same number of entries as the pax count. Create one traveler object for EACH passenger. If pax=3, travelers array must have 3 entries. Extract all passenger names you see.
+CRITICAL: Extract separate traveler entries for EACH passenger. If you see 2 names, create 2 traveler objects. If you see 3 names, create 3 traveler objects. 
+The travelers array MUST have exactly the same number of entries as the pax count. Create one traveler object for EACH passenger. 
+If pax=3, travelers array must have 3 entries. Extract all passenger names you see.
 
 - Trip cost/price
 - Planned activities

@@ -1,0 +1,361 @@
+================================================================================
+          MSIG INSURANCE CHATBOT - ACTUAL SYSTEM ARCHITECTURE
+          (Based on run_server.py - Only What's Currently Used)
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        FRONTEND LAYER (ACTIVE)                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │  Next.js/React Web Chat UI (frontend/app/page.tsx)                  │  │
+│  │  ✅ ACTIVE - Currently in use                                         │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+└──────────────────────────────────┬─────────────────────────────────────────┘
+                                   │
+                                   │ HTTP/REST API
+                                   │
+┌──────────────────────────────────▼─────────────────────────────────────────┐
+│                   API GATEWAY - FastAPI Server (ACTIVE)                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │  FastAPI Server (run_server.py) - PRIMARY SERVER                    │  │
+│  │  ✅ ACTIVE - This is the main server (MCP is optional/fallback)     │  │
+│  │                                                                     │  │
+│  │  Active Endpoints (from run_server.py):                             │  │
+│  │  - POST /api/ask              - Main chat endpoint                 │  │
+│  │  - POST /api/extract          - Document extraction                │  │
+│  │  - POST /api/quote             - Quote generation                    │  │
+│  │  - POST /api/payment/create   - Payment processing                 │  │
+│  │  - POST /api/compare          - Policy comparison                  │  │
+│  │  - POST /api/claims/analyze   - Claims analysis                   │  │
+│  │  - POST /api/risk              - Risk assessment                    │  │
+│  │  - POST /api/ancileo/policies - Ancileo integration                │  │
+│  │  - GET  /api/payment/status   - Payment status check              │  │
+│  │  - POST /api/user/profile     - User profile management            │  │
+│  │  - POST /api/translate        - Translation                        │  │
+│  │  - POST /api/voice/*          - Voice handling                    │  │
+│  │  - GET  /health                - Health check                       │  │
+│  │                                                                     │  │
+│  │  Also includes: routers.v1.router (v1 API routes)                │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+└──────────────────────────────────┬─────────────────────────────────────────┘
+                                   │
+                                   │ Direct Function Calls
+                                   │
+┌──────────────────────────────────▼─────────────────────────────────────────┐
+│              LLM ORCHESTRATION LAYER (ACTIVE)                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │  ConversationHandler (conversation_handler.py)                      │  │
+│  │  ✅ ACTIVE - Initialized in run_server.py: conversation = ...        │  │
+│  │                                                                     │  │
+│  │  ┌───────────────────────────────────────────────────────────────┐ │  │
+│  │  │ Intent Classifier + Semantic Router (ACTIVE)                  │ │  │
+│  │  │ - is_travel_question()      - Used in /api/ask                │ │  │
+│  │  │ - is_insurance_question()   - Used in /api/ask                │ │  │
+│  │  │ - Language detection        - MultilingualHandler            │ │  │
+│  │  │ - Sentiment analysis        - _detect_sentiment()             │ │  │
+│  │  └───────────────────────────────────────────────────────────────┘ │  │
+│  │                                                                     │  │
+│  │  ┌───────────────────────────────────────────────────────────────┐ │  │
+│  │  │ Model Strategy (ACTIVE)                                        │ │  │
+│  │  │ - LLM Provider: Groq API ✅ REQUIRED (checked at startup)     │ │  │
+│  │  │ - Model: llama-3.3-70b-versatile (primary)                  │ │  │
+│  │  │ - Model: llama-3.1-70b-versatile (conversational)           │ │  │
+│  │  │ - Reasoning: Direct function calls (not MCP tools)           │ │  │
+│  │  │ - Prompting: System prompts + business rules                 │ │  │
+│  │  └───────────────────────────────────────────────────────────────┘ │  │
+│  │                                                                     │  │
+│  │  ┌───────────────────────────────────────────────────────────────┐ │  │
+│  │  │ Safety + Guardrails (ACTIVE)                                  │ │  │
+│  │  │ - Sentiment detection (confused/frustrated/anxious)          │ │  │
+│  │  │ - Role-based responses (travel_agent/friend/expert)           │ │  │
+│  │  │ - Error handling with graceful fallbacks                      │ │  │
+│  │  └───────────────────────────────────────────────────────────────┘ │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+└──────────────────────────────────┬─────────────────────────────────────────┘
+                                   │
+                                   │ Direct Instantiation & Function Calls
+                                   │
+┌──────────────────────────────────▼─────────────────────────────────────────┐
+│              CORE INTELLIGENCE BLOCKS (ALL ACTIVE - Initialized)            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ✅ ALL INITIALIZED IN run_server.py (lines 90-104):                       │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │ Block 1: Policy Intelligence (policy_intelligence.py)                │  │
+│  │ ✅ policy_intel = PolicyIntelligence()                              │  │
+│  │ - PDF extraction (pdfplumber, PyPDF2)                                │  │
+│  │ - Policy normalization (Taxonomy matching)                            │  │
+│  │ - Policy comparison engine                                            │  │
+│  │ - RAG: Policy_Wordings/ directory (PDF documents)                     │  │
+│  │ - RAG: Taxonomy_Hackathon.json (structured taxonomy)                 │  │
+│  │ - Used in: /api/compare, /api/policy/compare-activities              │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │ Block 2: Conversational Magic (conversation_handler.py)            │  │
+│  │ ✅ conversation = ConversationHandler()                               │  │
+│  │ - TravelBuddy personality engine                                     │  │
+│  │ - MultilingualHandler (language detection & translation)             │  │
+│  │ - Role-based responses (travel_agent/friend/expert)                   │  │
+│  │ - Used in: /api/ask (primary endpoint)                               │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │ Block 3: Document Intelligence (document_intelligence.py)            │  │
+│  │ ✅ doc_intel = DocumentIntelligence()                                 │  │
+│  │ - PDF parsing (pdfplumber, PyPDF2)                                   │  │
+│  │ - Image OCR (LLM-based extraction via Groq)                           │  │
+│  │ - Email/text extraction                                               │  │
+│  │ - Base64 upload handling                                              │  │
+│  │ - Used in: /api/extract                                               │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │ Block 4: Seamless Commerce (payment_handler.py)                     │  │
+│  │ ✅ payment_handler = PaymentHandler()                                 │  │
+│  │ - Stripe payment integration ✅ ACTIVE                                 │  │
+│  │ - DynamoDB storage (with in-memory fallback) ⚠️ OPTIONAL              │  │
+│  │ - Used in: /api/payment/create, /api/payment/status                  │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │ Block 5: Predictive Intelligence (predictive_intelligence.py)      │  │
+│  │ ✅ predictive_intel = PredictiveIntelligence()                       │  │
+│  │ - Risk assessment engine                                            │  │
+│  │ - Claims data analysis (ClaimsAnalyzer, ClaimsDatabase)             │  │
+│  │ - Used in: /api/risk, /api/claims/analyze                           │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │ Supporting Services (ALL ACTIVE - All Initialized)                  │  │
+│  │ ✅ intelligent_recommender = IntelligentRecommender()                 │  │
+│  │ ✅ policy_scorer = PolicyScorer()                                   │  │
+│  │ ✅ pricing_calculator = PricingCalculator()                          │  │
+│  │ ✅ activity_matcher = ActivityPolicyMatcher()                       │  │
+│  │ ✅ policy_simplifier = PolicySimplifier()                           │  │
+│  │ ✅ taxonomy_matcher = TaxonomyMatcher()                             │  │
+│  │ ✅ claims_analyzer = ClaimsAnalyzer()                                │  │
+│  │ ✅ user_profile_manager = UserProfileManager()                      │  │
+│  │ ✅ partner_integrations = PartnerIntegrations()                     │  │
+│  │ ✅ mcp_integrations = MCPIntegrations() ⚠️ OPTIONAL                  │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+└──────────────────────────────────┬─────────────────────────────────────────┘
+                                   │
+                                   │
+┌──────────────────────────────────▼─────────────────────────────────────────┐
+│              MEMORY / STATE MANAGEMENT (ACTIVE)                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │ In-Memory State (conversation_handler.py)                           │  │
+│  │ ✅ ACTIVE - Always available                                         │  │
+│  │ - Session memory (user_id -> memory dict)                           │  │
+│  │ - User roles (travel_agent/friend/expert)                           │  │
+│  │ - Conversation history (recent exchanges)                          │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │ Persistent Storage (database.py)                                    │  │
+│  │ ⚠️ OPTIONAL - Requires MONGO_URI env variable                       │  │
+│  │ - MongoDB: User profiles, chat history, sessions                   │  │
+│  │ - Checks: db.is_connected() before use                             │  │
+│  │ - Fallback: In-memory if not connected                              │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+└──────────────────────────────────┬─────────────────────────────────────────┘
+                                   │
+                                   │
+┌──────────────────────────────────▼─────────────────────────────────────────┐
+│                    DATA STORAGE LAYER                                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │ MongoDB (database.py)                                              │  │
+│  │ ⚠️ OPTIONAL - Only if MONGO_URI is set                              │  │
+│  │ Collections (if connected):                                         │  │
+│  │ - users: User profiles, preferences, onboarding data                │  │
+│  │ - chat_history: Conversation logs per session                       │  │
+│  │ - quotes: Generated insurance quotes                                │  │
+│  │ - purchases: Completed insurance purchases                          │  │
+│  │ Status: Checked with db.is_connected() in routers/v1/chat.py      │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │ PostgreSQL (claims_database.py)                                      │  │
+│  │ ⚠️ OPTIONAL - Only if POSTGRES_* env vars are set                   │  │
+│  │ - Historical claims data                                             │  │
+│  │ - Destination risk analysis                                           │  │
+│  │ - Claim type statistics                                              │  │
+│  │ Status: Checked with claims_db.is_connected() before use           │  │
+│  │ Used by: ClaimsAnalyzer, ClaimsDatabase                             │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │ DynamoDB (payment_handler.py)                                        │  │
+│  │ ⚠️ OPTIONAL - Only if DDB_ENDPOINT is set                          │  │
+│  │ - Payment records storage                                            │  │
+│  │ - Fallback: In-memory storage if not connected                      │  │
+│  │ Status: PaymentHandler checks connection on init                    │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │ File System / Local Storage (ACTIVE)                                  │  │
+│  │ ✅ ALWAYS AVAILABLE                                                  │  │
+│  │ - Policy_Wordings/: PDF policy documents                            │  │
+│  │ - Taxonomy/: Structured taxonomy JSON                                │  │
+│  │ - Temporary files: Document processing (base64 -> temp PDF)          │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+└──────────────────────────────────┬─────────────────────────────────────────┘
+                                   │
+                                   │
+┌──────────────────────────────────▼─────────────────────────────────────────┐
+│                    EXTERNAL INTEGRATIONS                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │ LLM Provider: Groq API                                              │  │
+│  │ ✅ REQUIRED - Checked at startup (run_server.py lines 23-28)       │  │
+│  │ - llama-3.3-70b-versatile (primary reasoning model)                 │  │
+│  │ - llama-3.1-70b-versatile (conversational)                          │  │
+│  │ - Vision capabilities (for image OCR in document_intelligence)       │  │
+│  │ - Used by: All intelligence blocks                                  │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │ Ancileo API Integration (ancileo_api.py)                            │  │
+│  │ ⚠️ OPTIONAL - Used conditionally in /api/ask                       │  │
+│  │ - Real-time policy quotes                                           │  │
+│  │ - Policy comparison data                                            │  │
+│  │ - Used in: run_server.py line 278-348 (policy requests)            │  │
+│  │ - Status: Checks ancileo.available_keys before use                  │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │ Payment Gateway: Stripe (payment_handler.py)                        │  │
+│  │ ✅ ACTIVE - Used in PaymentHandler                                  │  │
+│  │ - Payment processing                                               │  │
+│  │ - Payment status tracking                                          │  │
+│  │ - Used in: /api/payment/create, /api/payment/stripe-mcp           │  │
+│  │ - Requires: STRIPE_SECRET_KEY env variable                          │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+└──────────────────────────────────┬─────────────────────────────────────────┘
+                                   │
+                                   │
+┌──────────────────────────────────▼─────────────────────────────────────────┐
+│                    OBSERVABILITY & LOGGING (ACTIVE)                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │ Logging Infrastructure                                               │  │
+│  │ ✅ ACTIVE - Python logging module                                    │  │
+│  │ - INFO/DEBUG/ERROR levels                                            │  │
+│  │ - Structured logging with context (user_id, session_id)            │  │
+│  │ - Error tracking with tracebacks                                    │  │
+│  │ - Configured in run_server.py line 19-20                             │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+                    WHAT'S NOT USED / REMOVED FROM DIAGRAM
+================================================================================
+
+❌ MCP Server (wandersure_server.py)
+   - Commented as "optional" in run_server.py line 39
+   - FastAPI is the PRIMARY server
+   - MCP is only attempted, then falls back to FastAPI
+
+❌ WhatsApp UI
+   - Not found in codebase
+   - Only Next.js/React web UI exists
+
+❌ Vector Store (explicit)
+   - No vector database (Pinecone, Chroma, etc.)
+   - Semantic search done via LLM (Groq) directly
+   - RAG uses file system + LLM semantic matching
+
+❌ MSIG Systems Direct Integration
+   - No direct MSIG API calls
+   - Only through Ancileo API integration
+
+================================================================================
+                            ACTUAL DATA FLOW (from run_server.py)
+================================================================================
+
+1. USER INPUT → Next.js/React Frontend (page.tsx)
+   ↓
+2. HTTP POST → FastAPI Server /api/ask (run_server.py:139)
+   ↓
+3. INTENT CLASSIFICATION → ConversationHandler.handle_question()
+   ├─→ Travel question? → TravelBuddy personality
+   ├─→ Insurance question? → Policy Intelligence + RAG
+   ├─→ Destination mentioned? → ClaimsAnalyzer.analyze_destination_and_recommend()
+   └─→ Document upload? → DocumentIntelligence.extract_trip_info()
+   ↓
+4. CONTEXT ENRICHMENT
+   ├─→ User memory (in-memory OR MongoDB if connected)
+   ├─→ Claims data (PostgreSQL if connected, via ClaimsAnalyzer)
+   ├─→ Policy data (RAG from Policy_Wordings/ + Taxonomy JSON)
+   ├─→ User profile (from request or UserProfileManager)
+   └─→ Ancileo quotes (if policy request AND ancileo.available_keys)
+   ↓
+5. LLM ORCHESTRATION → Groq API (REQUIRED)
+   ├─→ System prompt (role-based from ConversationHandler)
+   ├─→ Business rules & constraints
+   └─→ Direct function calls (not MCP tools)
+   ↓
+6. RESPONSE GENERATION
+   ├─→ Personalized answer
+   ├─→ Policy recommendations (from PolicyScorer, TaxonomyMatcher)
+   └─→ Actionable next steps
+   ↓
+7. STATE UPDATE
+   ├─→ Conversation history (MongoDB if connected, else in-memory)
+   └─→ User memory (in-memory + MongoDB if connected)
+   ↓
+8. HTTP Response → Frontend → User
+
+================================================================================
+                    KEY FINDINGS FROM run_server.py
+================================================================================
+
+✅ ACTIVE COMPONENTS (All initialized lines 90-104):
+   - policy_intel, doc_intel, predictive_intel
+   - payment_handler, conversation
+   - user_profile_manager, partner_integrations
+   - intelligent_recommender, pricing_calculator
+   - policy_scorer, claims_analyzer
+   - mcp_integrations, activity_matcher
+   - policy_simplifier, taxonomy_matcher
+
+⚠️ OPTIONAL COMPONENTS (Require env variables):
+   - MongoDB: Requires MONGO_URI (checked with db.is_connected())
+   - PostgreSQL: Requires POSTGRES_* vars (checked with claims_db.is_connected())
+   - DynamoDB: Requires DDB_ENDPOINT (fallback to in-memory)
+   - Ancileo API: Requires API keys (checked with ancileo.available_keys)
+   - Stripe: Requires STRIPE_SECRET_KEY (warns if missing)
+
+✅ REQUIRED COMPONENTS:
+   - Groq API: REQUIRED (exits if not set, line 24-28)
+   - FastAPI Server: PRIMARY (always runs)
+   - File System: Policy_Wordings/, Taxonomy/ (always available)
+
+❌ NOT USED:
+   - MCP Server as primary (optional fallback only)
+   - Vector database (semantic search via LLM)
+   - WhatsApp UI (doesn't exist)
+   - Direct MSIG API (only via Ancileo)
+
+================================================================================
