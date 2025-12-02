@@ -2721,7 +2721,15 @@ export default function Home() {
     
     const welcomeMsg: Message = {
       role: 'assistant',
-      content: `🎉 **Welcome!**\n\n✅ Your profile has been saved\n${userData.interests?.length > 0 ? `🎯 Interests: ${userData.interests.slice(0, 5).join(', ')}` : ''}\n\nReady to find the perfect travel insurance? Upload your travel itinerary to get started!`,
+      content: `### 🎉 Welcome, ${userData.name || 'Traveler'}!
+
+✅ **Your profile has been saved successfully**
+
+${userData.interests?.length > 0 ? `🎯 **Your Interests:** ${userData.interests.slice(0, 5).join(', ')}` : ''}
+
+**Ready to find the perfect travel insurance?** 
+
+📄 Upload your travel itinerary to get started, or ask me anything about travel insurance! ✈️`,
       timestamp: new Date()
     }
     setMessages([welcomeMsg])
@@ -2874,7 +2882,16 @@ export default function Home() {
     if (messages.length === 0) {
       setMessages([{
         role: 'assistant',
-        content: "### 👋 Welcome! I'm Wanda, Your Travel Insurance Agent\n\n• Expert travel insurance advice\n• Compare policies instantly\n• Get quotes in seconds\n\nHow can I help protect your trip? ✈️",
+        content: `### 👋 Welcome! I'm **Wanda**, Your Travel Insurance Agent
+
+✨ **What I can help you with:**
+
+🎯 **Expert Advice** - Get personalized travel insurance recommendations
+📊 **Compare Policies** - Instantly compare coverage and prices
+⚡ **Quick Quotes** - Get quotes in seconds
+🛡️ **Protection Planning** - Find the perfect coverage for your trip
+
+**Ready to get started?** Upload your travel itinerary or ask me anything about travel insurance! ✈️`,
         timestamp: new Date()
       }])
     }
@@ -3748,36 +3765,72 @@ export default function Home() {
                       background: transparent !important;
                       box-shadow: none !important;
                     }
-                    /* Style Google Translate button - make it match the dark theme */
+                    /* Enhanced Google Translate button styling */
                     .goog-te-gadget {
                       color: rgb(226, 232, 240) !important;
                       font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
                     }
                     .goog-te-gadget-simple {
-                      background-color: rgba(30, 41, 59, 0.8) !important;
-                      border: 1px solid rgba(100, 116, 139, 0.5) !important;
-                      border-radius: 0.75rem !important;
-                      padding: 0.5rem 0.75rem !important;
-                      backdrop-filter: blur(8px) !important;
-                      transition: all 0.2s !important;
+                      background: linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(51, 65, 85, 0.95) 100%) !important;
+                      border: 1.5px solid rgba(59, 130, 246, 0.3) !important;
+                      border-radius: 0.875rem !important;
+                      padding: 0.625rem 1rem !important;
+                      backdrop-filter: blur(12px) !important;
+                      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+                      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2) !important;
+                      position: relative !important;
+                      overflow: hidden !important;
+                    }
+                    .goog-te-gadget-simple::before {
+                      content: '' !important;
+                      position: absolute !important;
+                      top: 0 !important;
+                      left: -100% !important;
+                      width: 100% !important;
+                      height: 100% !important;
+                      background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.2), transparent) !important;
+                      transition: left 0.5s !important;
+                    }
+                    .goog-te-gadget-simple:hover::before {
+                      left: 100% !important;
                     }
                     .goog-te-gadget-simple:hover {
-                      background-color: rgba(51, 65, 85, 0.9) !important;
-                      border-color: rgba(59, 130, 246, 0.5) !important;
+                      background: linear-gradient(135deg, rgba(51, 65, 85, 0.98) 0%, rgba(71, 85, 105, 0.98) 100%) !important;
+                      border-color: rgba(59, 130, 246, 0.6) !important;
+                      box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.3), 0 4px 6px -2px rgba(59, 130, 246, 0.2) !important;
+                      transform: translateY(-1px) !important;
+                    }
+                    .goog-te-gadget-simple:active {
+                      transform: translateY(0px) !important;
                     }
                     .goog-te-gadget-simple .goog-te-menu-value {
                       color: rgb(226, 232, 240) !important;
                       font-size: 14px !important;
+                      font-weight: 500 !important;
+                      letter-spacing: 0.025em !important;
                     }
                     .goog-te-gadget-simple .goog-te-menu-value span {
                       color: rgb(148, 163, 184) !important;
+                      font-size: 12px !important;
                     }
                     .goog-te-gadget-icon {
-                      margin-left: 0.5rem !important;
+                      margin-left: 0.75rem !important;
                       margin-right: 0 !important;
+                      opacity: 0.8 !important;
+                      transition: opacity 0.3s !important;
+                    }
+                    .goog-te-gadget-simple:hover .goog-te-gadget-icon {
+                      opacity: 1 !important;
                     }
                     .goog-te-menu-value {
                       color: rgb(226, 232, 240) !important;
+                    }
+                    /* Style the dropdown menu */
+                    .goog-te-menu-frame {
+                      border-radius: 0.75rem !important;
+                      border: 1px solid rgba(100, 116, 139, 0.5) !important;
+                      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.3) !important;
+                      backdrop-filter: blur(12px) !important;
                     }
                   `}</style>
                 </div>
@@ -4209,22 +4262,71 @@ export default function Home() {
             </div>
             
             {isLoading && (
-              <div className="flex justify-start gap-3 animate-fade-in">
-                <div className="relative flex-shrink-0">
-                  <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-lg blur opacity-50 animate-pulse"></div>
-                  <div className="relative bg-gradient-to-br from-blue-500 to-indigo-500 p-2 rounded-lg shadow-lg">
-                    <Sparkles className="w-4 h-4 text-white animate-spin" />
+              <div className="flex justify-start gap-4 animate-fade-in mb-4">
+                <div className="relative flex-shrink-0 group">
+                  {/* Glowing background effect */}
+                  <div className="absolute inset-0 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-500 rounded-2xl blur-xl opacity-60 animate-pulse"></div>
+                  <div className="absolute inset-0 bg-gradient-to-br from-blue-400 via-indigo-400 to-purple-400 rounded-2xl blur-md opacity-40 animate-pulse" style={{ animationDelay: '0.5s' }}></div>
+                  
+                  {/* Main avatar container */}
+                  <div className="relative bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 p-3 rounded-2xl shadow-2xl border border-blue-400/30 backdrop-blur-sm">
+                    <div className="relative">
+                      <Sparkles className="w-5 h-5 text-white animate-spin" style={{ animationDuration: '2s' }} />
+                      {/* Orbiting particles */}
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="absolute w-1 h-1 bg-white rounded-full opacity-60 animate-ping" style={{ 
+                          top: '-8px', 
+                          left: '50%', 
+                          transform: 'translateX(-50%)',
+                          animationDelay: '0s',
+                          animationDuration: '1.5s'
+                        }}></div>
+                        <div className="absolute w-1 h-1 bg-blue-200 rounded-full opacity-60 animate-ping" style={{ 
+                          right: '-8px', 
+                          top: '50%', 
+                          transform: 'translateY(-50%)',
+                          animationDelay: '0.5s',
+                          animationDuration: '1.5s'
+                        }}></div>
+                        <div className="absolute w-1 h-1 bg-purple-200 rounded-full opacity-60 animate-ping" style={{ 
+                          bottom: '-8px', 
+                          left: '50%', 
+                          transform: 'translateX(-50%)',
+                          animationDelay: '1s',
+                          animationDuration: '1.5s'
+                        }}></div>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div className="relative">
-                  <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-600/20 to-indigo-600/20 rounded-xl blur animate-pulse"></div>
-                  <div className="relative bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl px-5 py-4 shadow-xl border border-gray-700/50">
-                    <div className="flex gap-2">
-                      <div className="w-2.5 h-2.5 bg-blue-400 rounded-full animate-bounce shadow-lg shadow-blue-500/50" style={{ animationDelay: '0ms' }}></div>
-                      <div className="w-2.5 h-2.5 bg-indigo-400 rounded-full animate-bounce shadow-lg shadow-indigo-500/50" style={{ animationDelay: '150ms' }}></div>
-                      <div className="w-2.5 h-2.5 bg-purple-400 rounded-full animate-bounce shadow-lg shadow-purple-500/50" style={{ animationDelay: '300ms' }}></div>
+                
+                {/* Thinking message card */}
+                <div className="relative flex-1 max-w-md">
+                  {/* Glow effect */}
+                  <div className="absolute -inset-1 bg-gradient-to-r from-blue-600/30 via-indigo-600/30 to-purple-600/30 rounded-2xl blur-lg opacity-50 animate-pulse"></div>
+                  
+                  {/* Main card */}
+                  <div className="relative bg-gradient-to-br from-slate-800/95 via-slate-800/95 to-slate-900/95 rounded-2xl px-6 py-5 shadow-2xl border border-blue-500/20 backdrop-blur-xl">
+                    {/* Animated thinking dots */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="flex gap-1.5">
+                        <div className="w-2 h-2 bg-gradient-to-br from-blue-400 to-indigo-400 rounded-full animate-bounce shadow-lg shadow-blue-500/50" style={{ animationDelay: '0ms' }}></div>
+                        <div className="w-2 h-2 bg-gradient-to-br from-indigo-400 to-purple-400 rounded-full animate-bounce shadow-lg shadow-indigo-500/50" style={{ animationDelay: '150ms' }}></div>
+                        <div className="w-2 h-2 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full animate-bounce shadow-lg shadow-purple-500/50" style={{ animationDelay: '300ms' }}></div>
+                      </div>
+                      <p className="text-transparent bg-clip-text bg-gradient-to-r from-blue-300 via-indigo-300 to-purple-300 text-sm font-semibold animate-pulse">
+                        Wanda is thinking...
+                      </p>
                     </div>
-                    <p className="text-gray-400 text-xs mt-2 animate-pulse">Wanda is thinking...</p>
+                    
+                    {/* Subtle progress bar */}
+                    <div className="h-1 bg-slate-700/50 rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 rounded-full animate-shimmer" style={{
+                        width: '60%',
+                        backgroundSize: '200% 100%',
+                        animation: 'shimmer 2s linear infinite'
+                      }}></div>
+                    </div>
                   </div>
                 </div>
               </div>
